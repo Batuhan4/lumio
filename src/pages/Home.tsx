@@ -1,88 +1,226 @@
-import React from "react";
-import { Code, Layout, Text } from "@stellar/design-system";
-import { GuessTheNumber } from "../components/GuessTheNumber";
+import { Badge, Button, Icon, Layout, Text } from "@stellar/design-system";
+import { AgentCard } from "../components/agents/AgentCard";
+import { MOCK_AGENTS, MOCK_RUN_HISTORY } from "../data/mock";
+import styles from "./Home.module.css";
 
-const Home: React.FC = () => (
-  <Layout.Content>
-    <Layout.Inset>
-      <Text as="h1" size="xl">
-        Welcome to your app!
-      </Text>
-      <Text as="p" size="md">
-        This is a basic template to get your dapp started with the Stellar
-        Design System and Stellar contracts. You can customize it further by
-        adding your own contracts, components, and styles.
-      </Text>
+const heroStats = [
+  {
+    value: "$12.4M",
+    label: "Escrowed & settled",
+    detail: "Closed pilot on Stellar testnet",
+  },
+  {
+    value: "58%",
+    label: "Average refund",
+    detail: "Auto-returned to users",
+  },
+  {
+    value: "42s",
+    label: "Median settlement",
+    detail: "Open → finalize",
+  },
+];
 
-      <Text as="h2" size="lg">
-        Develop your contracts
-      </Text>
-      <Text as="p" size="md">
-        Take a look in the <Code size="md">contracts/</Code> directory. Compare
-        that to what you see in the <Code size="md">npm run dev</Code> output
-        (which itself is running <Code size="md">stellar scaffold watch</Code>).
-        Also compare it to what you see when you click{" "}
-        <Code size="md">&lt;/&gt; Debugger</Code> up in the top right. See?
-      </Text>
-      <Text as="p" size="md">
-        As you update your contracts,{" "}
-        <Code size="md">stellar scaffold watch</Code> command will automatically
-        recompile them and update the dapp with the latest changes.
-      </Text>
+const highlights = [
+  {
+    icon: <Icon.Shield02 />,
+    title: "Deterministic escrow",
+    description:
+      "Escrow Max Charge on-chain and enforce meter budgets with Soroban contracts.",
+  },
+  {
+    icon: <Icon.CoinsStacked02 />,
+    title: "Refunds by default",
+    description:
+      "Runner usage reports finalize payouts instantly and send unused funds straight back.",
+  },
+  {
+    icon: <Icon.ClockCheck />,
+    title: "Simple schedules",
+    description:
+      "Ship daily digests or guardians with pause switches, per-run caps, and audit trails.",
+  },
+];
 
-      <Text as="h2" size="lg">
-        Interact with contracts from the frontend
-      </Text>
-      <Text as="p" size="md">
-        Scaffold stellar automatically builds, deploys, and generates frontend
-        packages (sometimes called "TypeScript bindings") for each of your
-        contracts. You can adjust how it does this in the{" "}
-        <Code size="md">environments.toml</Code> file. Import these frontend
-        packages like this:
-      </Text>
-      <pre>
-        <Code size="md">import game from "./contracts/guess_the_number";</Code>
-      </pre>
-      <Text as="p" size="md">
-        If your contract emits events, check out the{" "}
-        <Code size="md">useSubscription</Code> hook in the{" "}
-        <Code size="md">hooks/</Code> folder to listen to them.
-      </Text>
-      <Text as="p" size="md">
-        As an example, here's the <Code size="md">GuessTheNumber</Code>{" "}
-        component. Make changes to the contract and the component and see how
-        things change!
-      </Text>
-      <Text as="h2" size="lg">
-        &lt;GuessTheNumber /&gt;
-      </Text>
-      <GuessTheNumber />
-      <Text as="h2" size="lg">
-        Interact with wallets
-      </Text>
-      <Text as="p" size="md">
-        This project is already integrated with Stellar Wallet Kit, and the{" "}
-        <Code size="md">useWallet</Code> hook is available for you to use in
-        your components. You can use it to connect to get connected account
-        information.
-      </Text>
-      <Text as="h2" size="lg">
-        Deploy your app
-      </Text>
-      <Text as="p" size="md">
-        To deploy your contracts, use the{" "}
-        <Code size="md">stellar registry publish</Code> and
-        <Code size="md">stellar registry deploy</Code> commands ( use{" "}
-        <Code size="md">stellar registry --help</Code> for more info ) to deploy
-        to the appropriate Stellar network.
-      </Text>
-      <Text as="p" size="md">
-        Build your frontend application code with{" "}
-        <Code size="md">npm run build</Code> and deploy the output in the
-        <Code size="md">dist/</Code> directory.
-      </Text>
-    </Layout.Inset>
-  </Layout.Content>
-);
+const workflow = [
+  {
+    title: "Approve the Max Charge",
+    description:
+      "Users pick the agent’s rate card and budgets. Lumio escrows the upper bound immediately.",
+  },
+  {
+    title: "Runner executes inside caps",
+    description:
+      "Authorized keys stream live usage, halting when any meter hits its budget.",
+  },
+  {
+    title: "Finalize and refund",
+    description:
+      "Contracts push the actual cost to the developer and refund the difference automatically.",
+  },
+];
+
+const Home = () => {
+  const showcaseAgents = MOCK_AGENTS.slice(0, 3);
+  const latestReceipt = MOCK_RUN_HISTORY[0];
+
+  return (
+    <Layout.Content>
+      <Layout.Inset>
+        <section className={styles.hero}>
+          <div className={styles.heroCopy}>
+            <Badge size="sm" variant="secondary" className={styles.heroBadge}>
+              Built for autonomous finance
+            </Badge>
+            <Text as="h1" size="xl" className={styles.headline}>
+              One-click AI agents with escrowed spend and instant refunds.
+            </Text>
+            <Text as="p" size="md" className={styles.subheadline}>
+              Lumio lets you launch an agent marketplace that finance teams can
+              trust—predictable max charges, automatic refunds, and receipts
+              anyone can audit.
+            </Text>
+            <div className={styles.heroActions}>
+              <Button size="lg" variant="primary">
+                Launch a run
+              </Button>
+              <Button size="lg" variant="tertiary">
+                See escrow flow
+              </Button>
+            </div>
+          </div>
+          <div className={styles.heroPanel}>
+            <div className={styles.panelHeader}>
+              <Text as="h3" size="sm">
+                Lumio snapshot
+              </Text>
+              <Text as="p" size="xs" className={styles.panelSubhead}>
+                Numbers pulled from pilot data.
+              </Text>
+            </div>
+            <div className={styles.panelStats}>
+              {heroStats.map((item) => (
+                <div key={item.label} className={styles.panelStat}>
+                  <Text as="div" size="lg" className={styles.statValue}>
+                    {item.value}
+                  </Text>
+                  <Text as="div" size="sm" className={styles.statLabel}>
+                    {item.label}
+                  </Text>
+                  <Text as="div" size="xs" className={styles.statDetail}>
+                    {item.detail}
+                  </Text>
+                </div>
+              ))}
+            </div>
+            {latestReceipt ? (
+              <div className={styles.panelFooter}>
+                <Icon.Receipt size="sm" />
+                <Text as="p" size="xs">
+                  Latest run refunded {latestReceipt.refundAmount.toFixed(2)}{" "}
+                  USDC from a max charge of {latestReceipt.maxCharge.toFixed(2)}{" "}
+                  USDC.
+                </Text>
+              </div>
+            ) : null}
+          </div>
+        </section>
+
+        <section className={`${styles.section} ${styles.surface}`}>
+          <div className={styles.sectionIntro}>
+            <Text as="h2" size="lg">
+              Transparent rails from day one.
+            </Text>
+            <Text as="p" size="sm">
+              Focus on building agents—Lumio handles escrow, enforcement, and
+              refunds with the stellar-native primitives outlined in the PRD.
+            </Text>
+          </div>
+          <div className={styles.highlightGrid}>
+            {highlights.map((feature) => (
+              <div key={feature.title} className={styles.highlightCard}>
+                <div className={styles.featureIcon}>{feature.icon}</div>
+                <Text as="h3" size="md">
+                  {feature.title}
+                </Text>
+                <Text as="p" size="sm" className={styles.featureCopy}>
+                  {feature.description}
+                </Text>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className={styles.section}>
+          <div className={styles.sectionIntro}>
+            <Badge size="sm" variant="secondary">
+              Agents
+            </Badge>
+            <Text as="h2" size="lg">
+              Ready-to-run lineup
+            </Text>
+            <Text as="p" size="sm">
+              Three agents that showcase escrowed spend and automatic
+              micro-refunds.
+            </Text>
+          </div>
+          <div className={styles.agentGrid}>
+            {showcaseAgents.map((agent) => (
+              <AgentCard key={agent.id} agent={agent} onRun={() => undefined} />
+            ))}
+          </div>
+        </section>
+
+        <section className={`${styles.section} ${styles.surface}`}>
+          <div className={styles.sectionIntro}>
+            <Badge size="sm" variant="secondary">
+              Flow
+            </Badge>
+            <Text as="h2" size="lg">
+              Escrow in three moves
+            </Text>
+          </div>
+          <div className={styles.workflow}>
+            {workflow.map((item, index) => (
+              <div key={item.title} className={styles.workflowStep}>
+                <span className={styles.stepNumber}>
+                  {String(index + 1).padStart(2, "0")}
+                </span>
+                <div>
+                  <Text as="h3" size="md">
+                    {item.title}
+                  </Text>
+                  <Text as="p" size="sm" className={styles.workflowCopy}>
+                    {item.description}
+                  </Text>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className={`${styles.section} ${styles.surfaceCta}`}>
+          <div className={styles.sectionIntro}>
+            <Text as="h2" size="lg">
+              Spin up your first refund run
+            </Text>
+            <Text as="p" size="sm">
+              Drop in a manifest, set rates, and Lumio handles escrow and
+              refunds for you.
+            </Text>
+          </div>
+          <div className={styles.heroActions}>
+            <Button size="lg" variant="primary">
+              Request builder access
+            </Button>
+            <Button size="lg" variant="tertiary">
+              Read integration guide
+            </Button>
+          </div>
+        </section>
+      </Layout.Inset>
+    </Layout.Content>
+  );
+};
 
 export default Home;

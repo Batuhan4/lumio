@@ -1,0 +1,206 @@
+.hero {
+  display: grid;
+  gap: 2.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  align-items: stretch;
+  padding: 3.5rem 0 2.75rem;
+}
+
+.heroCopy {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.heroBadge {
+  align-self: flex-start;
+}
+
+.headline {
+  max-width: 36rem;
+  line-height: 1.1;
+}
+
+.subheadline {
+  max-width: 32rem;
+  color: var(--lumio-text-muted);
+}
+
+.heroActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.heroPanel {
+  background: linear-gradient(
+    150deg,
+    rgba(22, 30, 52, 0.78),
+    rgba(12, 18, 34, 0.82)
+  );
+  border: 1px solid rgba(92, 108, 255, 0.18);
+  border-radius: 1.5rem;
+  padding: 1.75rem;
+  box-shadow: 0 14px 36px rgba(5, 10, 24, 0.28);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.panelHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.panelSubhead {
+  color: var(--lumio-text-muted);
+}
+
+.panelStats {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.panelStat {
+  background: var(--lumio-surface);
+  border: 1px solid rgba(92, 108, 255, 0.16);
+  border-radius: 1rem;
+  padding: 1rem 1.1rem;
+  backdrop-filter: blur(12px);
+}
+
+.statValue {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.statLabel {
+  color: var(--lumio-text-muted);
+  margin-top: 0.35rem;
+}
+
+.statDetail {
+  color: var(--lumio-text-muted);
+  margin-top: 0.25rem;
+}
+
+.panelFooter {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  border-top: 1px solid rgba(92, 108, 255, 0.16);
+  padding-top: 1rem;
+  color: var(--lumio-text-muted);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+  margin-bottom: 3.5rem;
+}
+
+.sectionIntro {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  max-width: 32rem;
+}
+
+.surface {
+  background: var(--lumio-surface);
+  border: 1px solid rgba(92, 108, 255, 0.18);
+  border-radius: 1.4rem;
+  padding: 2.25rem;
+  box-shadow: 0 12px 30px rgba(5, 10, 24, 0.24);
+}
+
+.highlightGrid {
+  display: grid;
+  gap: 1.4rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.highlightCard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  color: var(--lumio-text-primary);
+  padding-right: 0.25rem;
+}
+
+.featureIcon {
+  width: 2.5rem;
+  height: 2.5rem;
+  display: grid;
+  place-items: center;
+  border-radius: 0.75rem;
+  background: rgba(92, 108, 255, 0.18);
+  color: var(--lumio-accent-strong);
+}
+
+.featureCopy {
+  color: var(--lumio-text-muted);
+}
+
+.agentGrid {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.workflow {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.workflowStep {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.stepNumber {
+  font-family: "Inconsolata", monospace;
+  font-size: 0.875rem;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--lumio-accent-strong);
+  margin-top: 0.2rem;
+}
+
+.workflowCopy {
+  color: var(--lumio-text-muted);
+  margin-top: 0.25rem;
+}
+
+.surfaceCta {
+  background:
+    linear-gradient(145deg, rgba(92, 108, 255, 0.16), rgba(65, 240, 192, 0.1)),
+    rgba(12, 18, 34, 0.82);
+  border: 1px solid rgba(92, 108, 255, 0.18);
+  border-radius: 1.5rem;
+  padding: 2rem 2.25rem;
+  box-shadow: 0 16px 46px rgba(5, 11, 26, 0.3);
+}
+
+@media (max-width: 720px) {
+  .hero {
+    padding-top: 2.5rem;
+  }
+
+  .heroPanel {
+    padding: 1.5rem;
+  }
+
+  .surface {
+    padding: 1.75rem;
+  }
+
+  .surfaceCta {
+    padding: 1.75rem;
+  }
+}

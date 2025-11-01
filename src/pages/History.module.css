@@ -1,0 +1,45 @@
+.heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  color: var(--lumio-text-muted);
+}
+
+.agentCell {
+  display: flex;
+  flex-direction: column;
+  color: var(--lumio-text-primary);
+}
+
+.muted {
+  color: var(--lumio-text-muted);
+}
+
+.chargeCell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.refundChip {
+  font-size: 0.75rem;
+  color: var(--lumio-text-muted);
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.tableSurface {
+  background:
+    linear-gradient(155deg, rgba(21, 4, 70, 0.75), rgba(11, 1, 45, 0.7)),
+    rgba(8, 0, 30, 0.82);
+  border: 1px solid rgba(155, 92, 255, 0.24);
+  border-radius: 1.25rem;
+  padding: 1.5rem;
+  box-shadow: 0 0 28px rgba(155, 92, 255, 0.2);
+  backdrop-filter: blur(12px);
+}

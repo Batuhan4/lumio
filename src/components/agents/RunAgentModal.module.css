@@ -1,0 +1,42 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+  background:
+    linear-gradient(140deg, rgba(25, 3, 76, 0.72), rgba(8, 0, 36, 0.6)),
+    rgba(7, 0, 32, 0.7);
+  border: 1px solid rgba(155, 92, 255, 0.22);
+  border-radius: 1rem;
+  padding: 1rem 1.25rem;
+  color: var(--lumio-text-primary);
+  box-shadow: 0 0 18px rgba(155, 92, 255, 0.15);
+}
+
+.rateCard {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  color: var(--lumio-text-muted);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+
+.scheduleRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--lumio-text-muted);
+}
+
+.scheduleFields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--lumio-text-muted);
+}

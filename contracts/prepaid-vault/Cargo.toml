@@ -1,0 +1,19 @@
+[package]
+name = "prepaid-vault"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true }
+agent_registry = { path = "../agent-registry", package = "agent-registry", default-features = false, features = ["interface"] }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+agent_registry = { path = "../agent-registry", package = "agent-registry", features = ["contract"] }
