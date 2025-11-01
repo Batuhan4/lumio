@@ -1,4 +1,4 @@
-import { Badge, Button, Icon, Layout, Text } from "@stellar/design-system";
+import { Button, Icon, Layout, Text } from "@stellar/design-system";
 import { AgentCard } from "../components/agents/AgentCard";
 import { MOCK_AGENTS, MOCK_RUN_HISTORY } from "../data/mock";
 import styles from "./Home.module.css";
@@ -69,11 +69,6 @@ const Home = () => {
       <Layout.Inset>
         <section className={styles.hero}>
           <div className={styles.heroCopy}>
-            <div className={styles.heroBadge}>
-              <Badge size="sm" variant="secondary">
-                Built for autonomous finance
-              </Badge>
-            </div>
             <Text as="h1" size="xl" className={styles.headline}>
               One-click AI agents with escrowed spend and instant refunds.
             </Text>
@@ -155,9 +150,6 @@ const Home = () => {
 
         <section className={styles.section}>
           <div className={styles.sectionIntro}>
-            <Badge size="sm" variant="secondary">
-              Agents
-            </Badge>
             <Text as="h2" size="lg">
               Ready-to-run lineup
             </Text>
@@ -175,9 +167,6 @@ const Home = () => {
 
         <section className={`${styles.section} ${styles.surface}`}>
           <div className={styles.sectionIntro}>
-            <Badge size="sm" variant="secondary">
-              Flow
-            </Badge>
             <Text as="h2" size="lg">
               Escrow in three moves
             </Text>

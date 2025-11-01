@@ -19,6 +19,7 @@
   ],
   "dependencies": {
     "@creit.tech/stellar-wallets-kit": "^1.9.5",
+    "@google/genai": "^1.28.0",
     "@stellar/design-system": "^3.1.5",
     "@stellar/stellar-sdk": "^14.2.0",
     "@stellar/stellar-xdr-json": "^23.0.0",

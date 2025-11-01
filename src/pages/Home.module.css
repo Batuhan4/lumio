@@ -12,18 +12,19 @@
   gap: 1.5rem;
 }
 
-.heroBadge {
-  align-self: flex-start;
-}
-
 .headline {
   max-width: 36rem;
   line-height: 1.1;
+  font-size: clamp(2.5rem, 2rem + 1.5vw, 3.75rem);
+  font-weight: 700;
+  letter-spacing: -0.015em;
 }
 
 .subheadline {
   max-width: 32rem;
   color: var(--lumio-text-muted);
+  font-size: clamp(1.1rem, 1rem + 0.4vw, 1.35rem);
+  line-height: 1.55;
 }
 
 .heroActions {
@@ -149,6 +150,7 @@
   display: grid;
   gap: 1.5rem;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  margin-bottom: 2.75rem;
 }
 
 .workflow {

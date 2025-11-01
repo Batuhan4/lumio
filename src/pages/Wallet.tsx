@@ -22,6 +22,10 @@ import { networkPassphrase as defaultNetworkPassphrase } from "../contracts/util
 import { formatCurrency } from "../util/format";
 import styles from "./Wallet.module.css";
 
+const WALLET_MODAL_ROOT_ID = "wallet-modal-root";
+const QUICK_DEPOSIT_AMOUNTS = ["25", "50", "100"];
+const QUICK_WITHDRAW_AMOUNTS = ["10", "25", "50"];
+
 const Wallet = () => {
   const [perRunCap, setPerRunCap] = useState(5);
   const [dailyCap, setDailyCap] = useState(50);
@@ -82,6 +86,26 @@ const Wallet = () => {
     if (vaultBalanceError) return "—";
     return formatCurrency(availableBalance);
   }, [address, isVaultBalanceLoading, vaultBalanceError, availableBalance]);
+
+  const perRunCapDisplay = useMemo(
+    () => formatCurrency(perRunCap),
+    [perRunCap],
+  );
+  const dailyCapDisplay = useMemo(() => formatCurrency(dailyCap), [dailyCap]);
+  const policyStatusLabel = useMemo(() => {
+    if (perRunCap <= 0 && dailyCap <= 0) return "Spending paused";
+    if (perRunCap <= 0) return "Per-run paused";
+    if (dailyCap <= 0) return "Daily paused";
+    return "Policy active";
+  }, [perRunCap, dailyCap]);
+  const policyStatusToneClass =
+    perRunCap > 0 && dailyCap > 0
+      ? styles.statusPillActive
+      : styles.statusPillWarning;
+  const pauseStatusLabel = isPaused ? "Runs paused" : "Runs active";
+  const pauseStatusToneClass = isPaused
+    ? styles.statusPillWarning
+    : styles.statusPillActive;
 
   const handleOpenDeposit = () => {
     setDepositAmount("");
@@ -320,6 +344,17 @@ const Wallet = () => {
               <Text as="h3" size="md">
                 Balances
               </Text>
+              {!address && !isWalletPending ? (
+                <div className={styles.callout}>
+                  <Icon.InfoCircle />
+                  <div>
+                    <Text as="span" size="sm">
+                      Connect your wallet from the header to deposit funds and
+                      manage withdrawals.
+                    </Text>
+                  </div>
+                </div>
+              ) : null}
               <div className={styles.balanceRow}>
                 <Text as="span" size="sm">
                   Escrow balance
@@ -388,13 +423,36 @@ const Wallet = () => {
 
           <div className={styles.panel}>
             <div className={styles.cardContent}>
-              <Text as="h3" size="md">
-                Spending policy
-              </Text>
+              <div className={styles.sectionHeader}>
+                <Text as="h3" size="md">
+                  Spending policy
+                </Text>
+                <span
+                  className={`${styles.statusPill} ${policyStatusToneClass}`}
+                >
+                  {policyStatusLabel}
+                </span>
+              </div>
               <Text as="p" size="sm">
                 Caps apply to any on-demand or scheduled run before the Max
                 Charge is escrowed.
               </Text>
+              <div className={styles.policyHighlights}>
+                <div className={styles.policyHighlight}>
+                  <span className={styles.policyHighlightLabel}>
+                    Per-run cap
+                  </span>
+                  <span className={styles.policyHighlightValue}>
+                    {perRunCapDisplay}
+                  </span>
+                </div>
+                <div className={styles.policyHighlight}>
+                  <span className={styles.policyHighlightLabel}>Daily cap</span>
+                  <span className={styles.policyHighlightValue}>
+                    {dailyCapDisplay}
+                  </span>
+                </div>
+              </div>
               <div className={styles.policyInputs}>
                 <Input
                   id="per-run-cap"
@@ -417,7 +475,11 @@ const Wallet = () => {
                   onChange={(event) => setDailyCap(Number(event.target.value))}
                 />
               </div>
-              <Button variant="primary" size="md">
+              <Button
+                variant="primary"
+                size="md"
+                className={styles.fullWidthButton}
+              >
                 Update caps
               </Button>
             </div>
@@ -425,27 +487,46 @@ const Wallet = () => {
 
           <div className={styles.panel}>
             <div className={styles.cardContent}>
-              <Text as="h3" size="md">
-                Pause new runs
-              </Text>
+              <div className={styles.sectionHeader}>
+                <Text as="h3" size="md">
+                  Pause new runs
+                </Text>
+                <span
+                  className={`${styles.statusPill} ${pauseStatusToneClass}`}
+                >
+                  {pauseStatusLabel}
+                </span>
+              </div>
               <Text as="p" size="sm">
                 Pausing stops any new `open_run` calls while preserving existing
                 escrows. Use when rotating credentials or investigating usage.
               </Text>
-              <div className={styles.pauseToggle}>
-                <Toggle
-                  id="pause-toggle"
-                  checked={isPaused}
-                  fieldSize="lg"
-                  onChange={() => setIsPaused((prev) => !prev)}
-                  iconChecked={<Icon.PauseCircle />}
-                  iconUnchecked={<Icon.PlayCircle />}
-                />
-                <Text as="span" size="sm">
-                  {isPaused ? "Account paused" : "Account active"}
-                </Text>
+              <div className={styles.pauseControls}>
+                <div className={styles.pauseToggle}>
+                  <Toggle
+                    id="pause-toggle"
+                    checked={isPaused}
+                    fieldSize="lg"
+                    onChange={() => setIsPaused((prev) => !prev)}
+                    iconChecked={<Icon.PauseCircle />}
+                    iconUnchecked={<Icon.PlayCircle />}
+                  />
+                </div>
+                <div className={styles.pauseCopy}>
+                  <Text as="span" size="sm">
+                    {isPaused ? "Account paused" : "Account active"}
+                  </Text>
+                  <Text as="span" size="xs" className={styles.pauseHint}>
+                    Toggle anytime — changes apply immediately for new runs.
+                  </Text>
+                </div>
               </div>
-              <Button variant="tertiary" size="md" disabled={!isPaused}>
+              <Button
+                variant={isPaused ? "primary" : "tertiary"}
+                size="md"
+                disabled={!isPaused}
+                className={styles.fullWidthButton}
+              >
                 Resume runs
               </Button>
             </div>
@@ -453,41 +534,99 @@ const Wallet = () => {
         </div>
       </Layout.Inset>
 
-      <Modal visible={isDepositModalOpen} onClose={handleCloseDeposit}>
+      <Modal
+        parentId={WALLET_MODAL_ROOT_ID}
+        visible={isDepositModalOpen}
+        onClose={handleCloseDeposit}
+      >
         <Modal.Heading>Deposit funds</Modal.Heading>
         <Modal.Body>
-          <form
-            id="deposit-form"
-            className={styles.depositForm}
-            onSubmit={(event) => {
-              event.preventDefault();
-              void handleDeposit();
-            }}
-          >
-            <Text as="p" size="sm">
-              1 XLM is treated as 1 USDC for vault deposits.
-            </Text>
-            <Input
-              id="deposit-amount"
-              fieldSize="md"
-              label="Amount to deposit"
-              type="number"
-              step="0.0000001"
-              min="0"
-              note="Displayed in USDC, deposited as XLM"
-              value={depositAmount}
-              onChange={(event) => setDepositAmount(event.target.value)}
-              error={depositError}
-            />
-            <Text as="span" size="xs" className={styles.walletBalanceNote}>
-              Wallet balance:{" "}
-              {isWalletBalanceLoading
-                ? "Loading..."
-                : walletBalanceError
-                  ? "Unavailable"
-                  : `${walletXlmBalance} XLM`}
-            </Text>
-          </form>
+          <div className={styles.modalCard}>
+            <div className={styles.modalCardHeader}>
+              <span
+                className={`${styles.modalCardIcon} ${styles.modalCardIconAccent}`}
+                aria-hidden
+              >
+                <Icon.ArrowCircleDown />
+              </span>
+              <div>
+                <Text as="h3" size="sm">
+                  Move balance into escrow
+                </Text>
+                <Text as="p" size="xs">
+                  Deposits settle immediately and unlock additional run budget.
+                </Text>
+              </div>
+            </div>
+            <div className={styles.modalStats}>
+              <div className={styles.modalStat}>
+                <span className={styles.modalStatLabel}>Escrow balance</span>
+                <span className={styles.modalStatValue}>{balanceDisplay}</span>
+              </div>
+              <div className={styles.modalStat}>
+                <span className={styles.modalStatLabel}>Available to run</span>
+                <span className={styles.modalStatValue}>
+                  {availableDisplay}
+                </span>
+              </div>
+              <div className={styles.modalStat}>
+                <span className={styles.modalStatLabel}>Wallet balance</span>
+                <span className={styles.modalStatValue}>
+                  {isWalletBalanceLoading
+                    ? "Loading..."
+                    : walletBalanceError
+                      ? "Unavailable"
+                      : `${walletXlmBalance} XLM`}
+                </span>
+              </div>
+            </div>
+            <form
+              id="deposit-form"
+              className={styles.depositForm}
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleDeposit();
+              }}
+            >
+              <Text as="p" size="sm">
+                1 XLM is treated as 1 USDC for vault deposits.
+              </Text>
+              <div className={styles.modalField}>
+                <Input
+                  id="deposit-amount"
+                  fieldSize="md"
+                  label="Amount to deposit"
+                  type="number"
+                  step="0.0000001"
+                  min="0"
+                  note="Displayed in USDC, deposited as XLM"
+                  value={depositAmount}
+                  onChange={(event) => setDepositAmount(event.target.value)}
+                  error={depositError}
+                  placeholder="e.g. 50"
+                />
+                <div className={styles.modalFieldActions}>
+                  {QUICK_DEPOSIT_AMOUNTS.map((amount) => (
+                    <Button
+                      key={amount}
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      className={styles.quickButton}
+                      onClick={() => setDepositAmount(amount)}
+                      disabled={!address || isWalletPending}
+                    >
+                      {`${amount} USDC`}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+              <Text as="span" size="xs" className={styles.modalHint}>
+                Need more XLM? Use the fund button next to the connect wallet
+                control in the header.
+              </Text>
+            </form>
+          </div>
         </Modal.Body>
         <Modal.Footer>
           <Button
@@ -505,38 +644,105 @@ const Wallet = () => {
         </Modal.Footer>
       </Modal>
 
-      <Modal visible={isWithdrawModalOpen} onClose={handleCloseWithdraw}>
+      <Modal
+        parentId={WALLET_MODAL_ROOT_ID}
+        visible={isWithdrawModalOpen}
+        onClose={handleCloseWithdraw}
+      >
         <Modal.Heading>Withdraw funds</Modal.Heading>
         <Modal.Body>
-          <form
-            id="withdraw-form"
-            className={styles.depositForm}
-            onSubmit={(event) => {
-              event.preventDefault();
-              void handleWithdraw();
-            }}
-          >
-            <Input
-              id="withdraw-amount"
-              fieldSize="md"
-              label="Amount to withdraw"
-              type="number"
-              step="0.0000001"
-              min="0"
-              note="Displayed in USDC, withdrawn as XLM"
-              value={withdrawAmount}
-              onChange={(event) => setWithdrawAmount(event.target.value)}
-              error={withdrawError}
-            />
-            <Text as="span" size="xs" className={styles.walletBalanceNote}>
-              Available balance:{" "}
-              {isVaultBalanceLoading
-                ? "Loading..."
-                : vaultBalanceError
-                  ? "Unavailable"
-                  : `${formatCurrency(availableBalance)} USDC`}
-            </Text>
-          </form>
+          <div className={styles.modalCard}>
+            <div className={styles.modalCardHeader}>
+              <span
+                className={`${styles.modalCardIcon} ${styles.modalCardIconWarning}`}
+                aria-hidden
+              >
+                <Icon.ArrowCircleUp />
+              </span>
+              <div>
+                <Text as="h3" size="sm">
+                  Release funds back to wallet
+                </Text>
+                <Text as="p" size="xs">
+                  Withdrawals hit your Stellar wallet after a single signed
+                  transaction.
+                </Text>
+              </div>
+            </div>
+            <div className={styles.modalStats}>
+              <div className={styles.modalStat}>
+                <span className={styles.modalStatLabel}>Available escrow</span>
+                <span className={styles.modalStatValue}>
+                  {availableDisplay}
+                </span>
+              </div>
+              <div className={styles.modalStat}>
+                <span className={styles.modalStatLabel}>Reserved</span>
+                <span className={styles.modalStatValue}>
+                  {formatCurrency(reservedBalance)}
+                </span>
+              </div>
+              <div className={styles.modalStat}>
+                <span className={styles.modalStatLabel}>
+                  Pending withdrawals
+                </span>
+                <span className={styles.modalStatValue}>
+                  {formatCurrency(pendingWithdrawals)}
+                </span>
+              </div>
+            </div>
+            <form
+              id="withdraw-form"
+              className={styles.depositForm}
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleWithdraw();
+              }}
+            >
+              <div className={styles.modalField}>
+                <Input
+                  id="withdraw-amount"
+                  fieldSize="md"
+                  label="Amount to withdraw"
+                  type="number"
+                  step="0.0000001"
+                  min="0"
+                  note="Displayed in USDC, withdrawn as XLM"
+                  value={withdrawAmount}
+                  onChange={(event) => setWithdrawAmount(event.target.value)}
+                  error={withdrawError}
+                  placeholder="e.g. 25"
+                />
+                <div className={styles.modalFieldActions}>
+                  {QUICK_WITHDRAW_AMOUNTS.map((amount) => {
+                    const amountNumber = Number(amount);
+                    const disableQuick =
+                      !address ||
+                      isWalletPending ||
+                      amountNumber <= 0 ||
+                      amountNumber > availableBalance;
+                    return (
+                      <Button
+                        key={amount}
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        className={styles.quickButton}
+                        onClick={() => setWithdrawAmount(amount)}
+                        disabled={disableQuick}
+                      >
+                        {`${amount} USDC`}
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
+              <Text as="span" size="xs" className={styles.modalHint}>
+                Escrow stays available for runs until withdrawn. Paused runs
+                keep their reserved totals intact.
+              </Text>
+            </form>
+          </div>
         </Modal.Body>
         <Modal.Footer>
           <Button

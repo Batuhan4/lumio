@@ -10,11 +10,15 @@
  * type. Used to provide both good typing AND good type-ahead, so that you can
  * see a list of valid storage keys while using this module elsewhere.
  */
+import type { WorkflowDraftState } from "../types/workflows";
+
 type Schema = {
   walletId: string;
   walletAddress: string;
   walletNetwork: string;
   networkPassphrase: string;
+  geminiApiKey: string;
+  workflowDrafts: WorkflowDraftState;
 };
 
 /**
