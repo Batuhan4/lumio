@@ -27,6 +27,7 @@ import { executeHttpRequest } from "../services/http";
 import type { HttpRequestExecution } from "../services/http";
 import { interpolateTemplate } from "../util/templates";
 import { useGeminiApiKey } from "../hooks/useGeminiApiKey";
+import { DEFAULT_HTTP_CONFIG } from "../types/workflows";
 import type {
   GeminiNodeConfig,
   HttpKeyValue,
@@ -659,10 +660,13 @@ const Builder = () => {
 
   const addHttpKeyValue = useCallback(
     (node: WorkflowNode<"http">, field: "headers" | "queryParams") => {
-      updateHttpConfig(node.id, (config) => ({
-        ...config,
-        [field]: [...config[field], createHttpKeyValue()],
-      }));
+      updateHttpConfig(node.id, (config) => {
+        const entries = config[field] ?? [];
+        return {
+          ...config,
+          [field]: [...entries, createHttpKeyValue()],
+        };
+      });
     },
     [updateHttpConfig],
   );
@@ -675,13 +679,15 @@ const Builder = () => {
       mutator: (entry: HttpKeyValue) => HttpKeyValue,
     ) => {
       updateHttpConfig(node.id, (config) => {
-        const index = config[field].findIndex(
-          (entry) => entry.id === keyValueId,
-        );
+        const entries = config[field] ?? [];
+        const index = entries.findIndex((entry) => entry.id === keyValueId);
         if (index === -1) {
-          return config;
+          return {
+            ...config,
+            [field]: entries,
+          };
         }
-        const nextEntries = [...config[field]];
+        const nextEntries = [...entries];
         nextEntries[index] = mutator(nextEntries[index]);
         return {
           ...config,
@@ -698,10 +704,19 @@ const Builder = () => {
       field: "headers" | "queryParams",
       id: string,
     ) => {
-      updateHttpConfig(node.id, (config) => ({
-        ...config,
-        [field]: config[field].filter((entry) => entry.id !== id),
-      }));
+      updateHttpConfig(node.id, (config) => {
+        const entries = config[field] ?? [];
+        if (entries.length === 0) {
+          return {
+            ...config,
+            [field]: [],
+          };
+        }
+        return {
+          ...config,
+          [field]: entries.filter((entry) => entry.id !== id),
+        };
+      });
     },
     [updateHttpConfig],
   );
@@ -771,19 +786,25 @@ const Builder = () => {
       setIsHttpPreviewRunning(true);
       setHttpPreviewError(null);
 
-      const variables = node.config.inputVariables.reduce<
-        Record<string, string>
-      >((accumulator, variable) => {
-        accumulator[variable] = node.config.testInputs[variable] ?? "";
-        return accumulator;
-      }, {});
+      const inputVariables = node.config.inputVariables ?? [];
+      const testInputs = node.config.testInputs ?? {};
+      const variables = inputVariables.reduce<Record<string, string>>(
+        (accumulator, variable) => {
+          accumulator[variable] = testInputs[variable] ?? "";
+          return accumulator;
+        },
+        {},
+      );
+
+      const queryParams = node.config.queryParams ?? [];
+      const headers = node.config.headers ?? [];
 
       try {
         const result: HttpRequestExecution = await executeHttpRequest({
           method: node.config.method,
           url: node.config.url,
-          queryParams: node.config.queryParams,
-          headers: node.config.headers,
+          queryParams,
+          headers,
           bodyTemplate: node.config.bodyTemplate,
           bodyMimeType: node.config.bodyMimeType,
           auth: node.config.auth,
@@ -1240,10 +1261,34 @@ const Builder = () => {
   const [apiKeyDraft, setApiKeyDraft] = useState(storedGeminiKey);
   const [isHttpPreviewRunning, setIsHttpPreviewRunning] = useState(false);
   const [httpPreviewError, setHttpPreviewError] = useState<string | null>(null);
-  const selectedHttpNode =
-    selectedNode?.kind === "http"
-      ? (selectedNode as WorkflowNode<"http">)
-      : null;
+  const selectedHttpNode = useMemo(() => {
+    if (selectedNode?.kind !== "http") {
+      return null;
+    }
+
+    const config = selectedNode.config as HttpNodeConfig | undefined;
+    const normalizedConfig: HttpNodeConfig = {
+      ...DEFAULT_HTTP_CONFIG,
+      ...(config ?? {}),
+      queryParams: Array.isArray(config?.queryParams)
+        ? config?.queryParams
+        : [],
+      headers: Array.isArray(config?.headers) ? config?.headers : [],
+      inputVariables: Array.isArray(config?.inputVariables)
+        ? config?.inputVariables
+        : [],
+      testInputs:
+        config?.testInputs && typeof config.testInputs === "object"
+          ? config.testInputs
+          : {},
+      lastPreview: config?.lastPreview,
+    };
+
+    return {
+      ...(selectedNode as WorkflowNode<"http">),
+      config: normalizedConfig,
+    };
+  }, [selectedNode]);
   const httpLastPreview = selectedHttpNode?.config.lastPreview;
   const formattedHttpBody = useMemo(() => {
     const bodyJson = httpLastPreview?.response?.bodyJson;
