@@ -1,16 +1,22 @@
-:global(.ProjectLogo) {
-  display: none;
-}
-
 .app {
   background: transparent;
 }
 
-.headerCenter {
+.header {
+  padding: 0.75rem 0;
+}
+
+.headerBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
+.branding {
   display: flex;
   align-items: center;
   gap: 2rem;
-  padding: 0.5rem 0;
 }
 
 .nav {

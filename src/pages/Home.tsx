@@ -69,9 +69,11 @@ const Home = () => {
       <Layout.Inset>
         <section className={styles.hero}>
           <div className={styles.heroCopy}>
-            <Badge size="sm" variant="secondary" className={styles.heroBadge}>
-              Built for autonomous finance
-            </Badge>
+            <div className={styles.heroBadge}>
+              <Badge size="sm" variant="secondary">
+                Built for autonomous finance
+              </Badge>
+            </div>
             <Text as="h1" size="xl" className={styles.headline}>
               One-click AI agents with escrowed spend and instant refunds.
             </Text>

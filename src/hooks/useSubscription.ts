@@ -49,20 +49,29 @@ export function useSubscription(
           paging[id].lastLedgerStart = latestLedgerState.sequence;
         }
 
-        const response = await server.getEvents({
-          startLedger: !paging[id].pagingToken
-            ? paging[id].lastLedgerStart
-            : undefined,
-          cursor: paging[id].pagingToken,
-          filters: [
-            {
-              contractIds: [contractId],
-              topics: [[xdr.ScVal.scvSymbol(topic).toXDR("base64")]],
-              type: "contract",
-            },
-          ],
-          limit: 10,
-        });
+        const filters: Api.EventFilter[] = [
+          {
+            contractIds: [contractId],
+            topics: [[xdr.ScVal.scvSymbol(topic).toXDR("base64")]],
+            type: "contract",
+          },
+        ];
+
+        const request: Api.GetEventsRequest =
+          typeof paging[id].pagingToken === "string"
+            ? ({
+                cursor: paging[id].pagingToken,
+                filters,
+                limit: 10,
+              } as Api.GetEventsRequest)
+            : ({
+                startLedger: paging[id].lastLedgerStart ?? 0,
+                endLedger: paging[id].lastLedgerStart ?? 0,
+                filters,
+                limit: 10,
+              } as Api.GetEventsRequest);
+
+        const response = await server.getEvents(request);
 
         paging[id].pagingToken = undefined;
         if (response.latestLedger) {
@@ -78,7 +87,14 @@ export function useSubscription(
                 error,
               );
             } finally {
-              paging[id].pagingToken = event.pagingToken;
+              const eventPagingToken =
+                typeof (event as { pagingToken?: unknown }).pagingToken ===
+                "string"
+                  ? (event as { pagingToken?: string }).pagingToken
+                  : undefined;
+              if (eventPagingToken) {
+                paging[id].pagingToken = eventPagingToken;
+              }
             }
           });
         }

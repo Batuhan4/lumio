@@ -3,6 +3,7 @@ import ConnectAccount from "./components/ConnectAccount.tsx";
 import { LumioLogo } from "./components/LumioLogo";
 import { Routes, Route, Outlet, NavLink } from "react-router-dom";
 import Home from "./pages/Home";
+import Builder from "./pages/Builder.tsx";
 import Debugger from "./pages/Debugger.tsx";
 import Wallet from "./pages/Wallet.tsx";
 import History from "./pages/History.tsx";
@@ -11,6 +12,7 @@ import styles from "./App.module.css";
 
 const navLinks = [
   { to: "/", label: "Discover" },
+  { to: "/builder", label: "Build" },
   { to: "/wallet", label: "Wallet" },
   { to: "/history", label: "History" },
   { to: "/developers", label: "Developers" },
@@ -18,43 +20,42 @@ const navLinks = [
 
 const AppLayout: React.FC = () => (
   <main className={styles.app}>
-    <Layout.Header
-      projectId="Lumio"
-      contentCenter={
-        <div className={styles.headerCenter}>
-          <LumioLogo />
-          <nav className={styles.nav}>
-            {navLinks.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.to === "/"}
-                className={({ isActive }) =>
-                  [styles.navLink, isActive ? styles.navLinkActive : ""]
-                    .join(" ")
-                    .trim()
-                }
-              >
-                {item.label}
-              </NavLink>
-            ))}
-          </nav>
+    <header className={styles.header}>
+      <Layout.Inset>
+        <div className={styles.headerBar}>
+          <div className={styles.branding}>
+            <LumioLogo />
+            <nav className={styles.nav}>
+              {navLinks.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.to === "/"}
+                  className={({ isActive }) =>
+                    [styles.navLink, isActive ? styles.navLinkActive : ""]
+                      .join(" ")
+                      .trim()
+                  }
+                >
+                  {item.label}
+                </NavLink>
+              ))}
+            </nav>
+          </div>
+          <div className={styles.headerRight}>
+            <NavLink to="/debug">
+              {({ isActive }) => (
+                <Button variant="tertiary" size="md" disabled={isActive}>
+                  <Icon.Code02 size="md" />
+                  Debugger
+                </Button>
+              )}
+            </NavLink>
+            <ConnectAccount />
+          </div>
         </div>
-      }
-      contentRight={
-        <div className={styles.headerRight}>
-          <NavLink to="/debug">
-            {({ isActive }) => (
-              <Button variant="tertiary" size="md" disabled={isActive}>
-                <Icon.Code02 size="md" />
-                Debugger
-              </Button>
-            )}
-          </NavLink>
-          <ConnectAccount />
-        </div>
-      }
-    />
+      </Layout.Inset>
+    </header>
     <Outlet />
     <Layout.Footer>
       <span>
@@ -77,6 +78,7 @@ function App() {
     <Routes>
       <Route element={<AppLayout />}>
         <Route path="/" element={<Home />} />
+        <Route path="/builder" element={<Builder />} />
         <Route path="/wallet" element={<Wallet />} />
         <Route path="/history" element={<History />} />
         <Route path="/developers" element={<Developers />} />

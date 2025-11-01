@@ -1,0 +1,268 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  min-height: calc(100vh - 12rem);
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1.5rem;
+  padding: 1.5rem;
+  border-radius: 1.5rem;
+  background:
+    linear-gradient(160deg, rgba(51, 13, 130, 0.6), rgba(16, 2, 58, 0.7)),
+    rgba(14, 0, 50, 0.6);
+  border: 1px solid rgba(155, 92, 255, 0.24);
+  box-shadow: 0 0 28px rgba(155, 92, 255, 0.18);
+}
+
+.headerActions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr) 320px;
+  gap: 1.5rem;
+  align-items: stretch;
+}
+
+.palette,
+.canvasShell,
+.inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem;
+  border-radius: 1.5rem;
+  background:
+    linear-gradient(160deg, rgba(21, 3, 70, 0.7), rgba(11, 0, 37, 0.72)),
+    rgba(8, 0, 28, 0.65);
+  border: 1px solid rgba(155, 92, 255, 0.22);
+  box-shadow: 0 0 24px rgba(155, 92, 255, 0.15);
+  min-height: 480px;
+}
+
+.panelHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  color: var(--lumio-text-muted);
+}
+
+.paletteGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-top: 0.5rem;
+}
+
+.groupLabel {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--lumio-text-muted);
+}
+
+.paletteItem {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  background: rgba(155, 92, 255, 0.08);
+  border: 1px solid transparent;
+  border-radius: 1rem;
+  color: inherit;
+  text-align: left;
+  cursor: grab;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    transform 120ms ease;
+}
+
+.paletteItem:hover {
+  border-color: rgba(155, 92, 255, 0.45);
+  background: rgba(155, 92, 255, 0.14);
+  transform: translateY(-1px);
+}
+
+.paletteItem span {
+  font-weight: 600;
+  display: block;
+}
+
+.paletteItem small {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--lumio-text-muted);
+}
+
+.canvasShell {
+  padding: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.canvasHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.25rem 1.5rem 0.75rem;
+  border-bottom: 1px solid rgba(155, 92, 255, 0.18);
+  color: var(--lumio-text-muted);
+}
+
+.canvasControls {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.canvas {
+  flex: 1;
+  position: relative;
+  background-image:
+    linear-gradient(rgba(155, 92, 255, 0.12) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(155, 92, 255, 0.12) 1px, transparent 1px);
+  background-size: 48px 48px;
+  backdrop-filter: blur(12px);
+  display: flex;
+  padding: 1.5rem;
+  position: relative;
+}
+
+.canvasInner {
+  position: relative;
+  flex: 1;
+  width: 100%;
+  min-height: 560px;
+}
+
+.canvasEmpty {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: center;
+  text-align: center;
+  max-width: 320px;
+  color: var(--lumio-text-muted);
+  margin: auto;
+}
+
+.inspectorEmpty {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  flex: 1;
+  color: var(--lumio-text-muted);
+}
+
+.inspectorDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  color: var(--lumio-text-muted);
+}
+
+.inspectorHint {
+  color: var(--lumio-text-muted);
+}
+
+.paletteItem svg {
+  flex-shrink: 0;
+}
+
+.node {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  background:
+    linear-gradient(160deg, rgba(103, 46, 198, 0.68), rgba(43, 8, 129, 0.7)),
+    rgba(24, 2, 73, 0.72);
+  border: 1px solid rgba(155, 92, 255, 0.28);
+  border-radius: 1.25rem;
+  box-shadow: 0 12px 32px rgba(16, 2, 58, 0.45);
+  color: var(--lumio-text-primary);
+  cursor: grab;
+  transition:
+    box-shadow 160ms ease,
+    border-color 160ms ease;
+  user-select: none;
+}
+
+.node:focus-visible {
+  outline: 2px solid rgba(155, 92, 255, 0.65);
+  outline-offset: 3px;
+}
+
+.nodeSelected {
+  border-color: rgba(255, 255, 255, 0.6);
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.14),
+    0 16px 36px rgba(72, 16, 189, 0.5);
+}
+
+.nodeHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.nodeTitle {
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.nodeBadge {
+  padding: 0.125rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(12, 220, 255, 0.2);
+  color: rgba(161, 247, 255, 0.88);
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.nodeBody {
+  color: var(--lumio-text-muted);
+}
+
+.nodePorts {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.nodePort {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.6);
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.45);
+}
+
+@media (max-width: 1200px) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .palette,
+  .canvasShell,
+  .inspector {
+    min-height: unset;
+  }
+
+  .canvasInner {
+    min-height: 480px;
+  }
+}

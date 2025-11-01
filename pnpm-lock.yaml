@@ -25,12 +25,15 @@ importers:
       bignumber.js:
         specifier: ^9.3.1
         version: 9.3.1
-      lossless-json:
-        specifier: ^4.2.0
-        version: 4.3.0
+      json-schema:
+        specifier: ^0.4.0
+        version: 0.4.0
       lodash:
         specifier: ^4.17.21
         version: 4.17.21
+      lossless-json:
+        specifier: ^4.2.0
+        version: 4.3.0
       react:
         specifier: ^19.1.1
         version: 19.2.0
@@ -47,6 +50,15 @@ importers:
       "@eslint/js":
         specifier: ^9.36.0
         version: 9.39.0
+      "@types/json-schema":
+        specifier: ^7.0.15
+        version: 7.0.15
+      "@types/lodash":
+        specifier: ^4.17.20
+        version: 4.17.20
+      "@types/node":
+        specifier: ^24.9.2
+        version: 24.9.2
       "@types/react":
         specifier: ^19.1.16
         version: 19.2.2
@@ -2172,6 +2184,12 @@ packages:
     resolution:
       {
         integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==,
+      }
+
+  "@types/lodash@4.17.20":
+    resolution:
+      {
+        integrity: sha512-H3MHACvFUEiujabxhaI/ImO6gUrd8oOurg7LQtS7mbwIXA/cUqWrvBsaeJ23aZEPk1TAYkurjfMbSELfoCXlGA==,
       }
 
   "@types/node@12.20.55":
@@ -4330,6 +4348,12 @@ packages:
     resolution:
       {
         integrity: sha512-xbbCH5dCYU5T8LcEhhuh7HJ88HXuW3qsI3Y0zOZFKfZEHcpWiHU/Jxzk629Brsab/mMiHQti9wMP+845RPe3Vg==,
+      }
+
+  json-schema@0.4.0:
+    resolution:
+      {
+        integrity: sha512-es94M3nTIfsEPisRafak+HDLfHXnKBhV3vU5eqPcS3flIWqcxJWgXHXiey3YrpaNsanY5ei1VoYEbOzijuq9BA==,
       }
 
   json-stable-stringify-without-jsonify@1.0.1:
@@ -8007,13 +8031,15 @@ snapshots:
 
   "@types/connect@3.4.38":
     dependencies:
-      "@types/node": 12.20.55
+      "@types/node": 24.9.2
 
   "@types/estree@1.0.8": {}
 
   "@types/history@4.7.11": {}
 
   "@types/json-schema@7.0.15": {}
+
+  "@types/lodash@4.17.20": {}
 
   "@types/node@12.20.55": {}
 
@@ -8050,7 +8076,7 @@ snapshots:
 
   "@types/ws@7.4.7":
     dependencies:
-      "@types/node": 12.20.55
+      "@types/node": 24.9.2
 
   "@types/ws@8.18.1":
     dependencies:
@@ -9568,6 +9594,8 @@ snapshots:
   json-buffer@3.0.1: {}
 
   json-schema-traverse@0.4.1: {}
+
+  json-schema@0.4.0: {}
 
   json-stable-stringify-without-jsonify@1.0.1: {}
 
