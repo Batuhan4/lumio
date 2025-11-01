@@ -201,6 +201,122 @@
   color: var(--lumio-text-muted);
 }
 
+.apiKeyPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-bottom: 1rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid rgba(155, 92, 255, 0.14);
+}
+
+.apiKeyRow {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-end;
+}
+
+.parameterGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+}
+
+.inspectorSection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border-radius: 1rem;
+  background: rgba(155, 92, 255, 0.06);
+  border: 1px solid rgba(155, 92, 255, 0.12);
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.variableRow {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-end;
+}
+
+.keyValueRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: flex-end;
+}
+
+.inspectorActions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.errorMessage {
+  color: #ffb4b4;
+}
+
+.previewPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-radius: 1rem;
+  background: rgba(8, 0, 28, 0.65);
+  border: 1px solid rgba(155, 92, 255, 0.18);
+}
+
+.previewHeader {
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.previewOutput {
+  max-height: 220px;
+  overflow: auto;
+  background: rgba(18, 2, 60, 0.65);
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+  font-family: monospace;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: rgba(231, 236, 255, 0.94);
+  white-space: pre-wrap;
+}
+
+.previewMeta {
+  color: rgba(214, 224, 255, 0.7);
+}
+
+.previewDetails {
+  background: rgba(155, 92, 255, 0.08);
+  border: 1px solid rgba(155, 92, 255, 0.14);
+  border-radius: 0.75rem;
+  padding: 0.5rem 0.75rem 0.75rem;
+}
+
+.previewDetails summary {
+  cursor: pointer;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(214, 224, 255, 0.7);
+  margin-bottom: 0.5rem;
+}
+
+.codeInline {
+  font-family: monospace;
+  background: rgba(155, 92, 255, 0.12);
+  border-radius: 0.5rem;
+  padding: 0.1rem 0.4rem;
+  color: rgba(231, 236, 255, 0.9);
+}
+
 .inspectorHint {
   color: var(--lumio-text-muted);
 }

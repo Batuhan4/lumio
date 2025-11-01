@@ -6,7 +6,37 @@ import {
   useRef,
   useState,
 } from "react";
-import { Button, Icon, Layout, Text } from "@stellar/design-system";
+import {
+  Button,
+  Icon,
+  Input,
+  Layout,
+  Select,
+  Text,
+  Textarea,
+} from "@stellar/design-system";
+import {
+  createWorkflowDefinition,
+  createWorkflowNode,
+  loadWorkflowState,
+  saveWorkflowState,
+  upsertWorkflow,
+} from "../util/workflows";
+import { generateText as generateGeminiText } from "../services/gemini";
+import { executeHttpRequest } from "../services/http";
+import type { HttpRequestExecution } from "../services/http";
+import { interpolateTemplate } from "../util/templates";
+import { useGeminiApiKey } from "../hooks/useGeminiApiKey";
+import type {
+  GeminiNodeConfig,
+  HttpKeyValue,
+  HttpMethod,
+  HttpNodeConfig,
+  WorkflowDefinition,
+  WorkflowDraftState,
+  WorkflowNode,
+  WorkflowNodeKind,
+} from "../types/workflows";
 import styles from "./Builder.module.css";
 
 const GRID_SIZE = 48;
@@ -17,29 +47,58 @@ const BASE_CANVAS_HEIGHT = GRID_SIZE * 1200;
 const MIN_CANVAS_SCALE = 0.01;
 const MAX_CANVAS_SCALE = 64;
 const CANVAS_ZOOM_FACTOR = 1.2;
+const GEMINI_MODEL_OPTIONS = [
+  "gemini-2.0-flash",
+  "gemini-2.0-pro",
+  "gemini-1.5-flash",
+  "gemini-1.5-pro",
+  "gemini-1.5-flash-8b",
+];
+const GEMINI_RESPONSE_MIME_TYPES: Array<{
+  value: "text/plain" | "application/json";
+  label: string;
+}> = [
+  { value: "text/plain", label: "Plain text" },
+  { value: "application/json", label: "JSON" },
+];
 
-type PaletteKind =
-  | "http"
-  | "stellar-account"
-  | "gemini"
-  | "classifier"
-  | "conditional"
-  | "ipfs";
+const HTTP_METHOD_OPTIONS: HttpMethod[] = [
+  "GET",
+  "POST",
+  "PUT",
+  "PATCH",
+  "DELETE",
+  "HEAD",
+];
+
+const HTTP_BODY_MIME_TYPES: Array<{
+  value: "application/json" | "text/plain";
+  label: string;
+}> = [
+  { value: "application/json", label: "JSON" },
+  { value: "text/plain", label: "Plain text" },
+];
+
+type HttpAuthType = HttpNodeConfig["auth"]["type"];
+
+const createHttpKeyValue = (): HttpKeyValue => ({
+  id:
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `kv-${Date.now()}-${Math.round(Math.random() * 1_000_000)}`,
+  key: "",
+  value: "",
+  enabled: true,
+});
+
+const EMPTY_NODES: WorkflowNode[] = [];
 
 type PaletteItemDefinition = {
-  kind: PaletteKind;
+  kind: WorkflowNodeKind;
   title: string;
   description: string;
   icon: React.ReactNode;
   group: "Data & APIs" | "AI & Automation" | "System";
-};
-
-type WorkflowNode = {
-  id: string;
-  kind: PaletteKind;
-  title: string;
-  description: string;
-  position: { x: number; y: number };
 };
 
 type CanvasMetrics = {
@@ -54,16 +113,11 @@ const snapPosition = ({ x, y }: { x: number; y: number }) => ({
   y: Math.round(y / GRID_SIZE) * GRID_SIZE,
 });
 
-const createNodeId = () =>
-  typeof crypto !== "undefined" && crypto.randomUUID
-    ? crypto.randomUUID()
-    : `node-${Date.now()}-${Math.round(Math.random() * 1_000_000)}`;
-
 const PaletteItem: React.FC<{
   item: PaletteItemDefinition;
   onDragStart: (
     event: React.DragEvent<HTMLButtonElement>,
-    kind: PaletteKind,
+    kind: WorkflowNodeKind,
   ) => void;
 }> = ({ item, onDragStart }) => (
   <button
@@ -228,13 +282,562 @@ const Builder = () => {
   );
 
   const paletteLookup = useMemo(() => {
-    const lookup = new Map<PaletteKind, PaletteItemDefinition>();
+    const lookup = new Map<WorkflowNodeKind, PaletteItemDefinition>();
     paletteItems.forEach((item) => lookup.set(item.kind, item));
     return lookup;
   }, [paletteItems]);
 
-  const [nodes, setNodes] = useState<WorkflowNode[]>([]);
+  const [workflowState, setWorkflowState] = useState<WorkflowDraftState>(() => {
+    const stored = loadWorkflowState();
+    if (stored.activeWorkflowId) {
+      return stored;
+    }
+    const initialWorkflow = createWorkflowDefinition("Untitled workflow");
+    const initialState: WorkflowDraftState = {
+      activeWorkflowId: initialWorkflow.id,
+      workflows: {
+        [initialWorkflow.id]: initialWorkflow,
+      },
+    };
+    saveWorkflowState(initialState);
+    return initialState;
+  });
+
+  const activeWorkflowId = workflowState.activeWorkflowId;
+  const activeWorkflow =
+    activeWorkflowId && workflowState.workflows[activeWorkflowId]
+      ? workflowState.workflows[activeWorkflowId]
+      : null;
+  const nodes = activeWorkflow?.nodes ?? EMPTY_NODES;
+  const {
+    apiKey: geminiApiKey,
+    persistedKey: storedGeminiKey,
+    setApiKey: persistGeminiKey,
+    clearApiKey,
+  } = useGeminiApiKey();
+
+  const updateActiveWorkflow = useCallback(
+    (
+      mutator: (
+        workflow: WorkflowDefinition,
+      ) => WorkflowDefinition | null | undefined,
+    ) => {
+      setWorkflowState((previous) => {
+        const id = previous.activeWorkflowId;
+        if (!id) {
+          return previous;
+        }
+        const current = previous.workflows[id];
+        if (!current) {
+          return previous;
+        }
+        const updated = mutator(current);
+        if (!updated || updated === current) {
+          return previous;
+        }
+        return upsertWorkflow(previous, updated);
+      });
+    },
+    [],
+  );
+
+  const updateGeminiNode = useCallback(
+    (
+      nodeId: string,
+      mutator: (
+        node: WorkflowNode<"gemini">,
+      ) => WorkflowNode<"gemini"> | null | undefined,
+    ) => {
+      updateActiveWorkflow((workflow) => {
+        const index = workflow.nodes.findIndex((node) => node.id === nodeId);
+        if (index === -1) {
+          return workflow;
+        }
+        const currentNode = workflow.nodes[index];
+        if (currentNode.kind !== "gemini") {
+          return workflow;
+        }
+        const updated = mutator(currentNode as WorkflowNode<"gemini">);
+        if (!updated || updated === currentNode) {
+          return workflow;
+        }
+        const nextNodes = [...workflow.nodes];
+        nextNodes[index] = updated;
+        return {
+          ...workflow,
+          nodes: nextNodes,
+        };
+      });
+    },
+    [updateActiveWorkflow],
+  );
+
+  const updateGeminiConfig = useCallback(
+    (
+      nodeId: string,
+      mutator: (config: GeminiNodeConfig) => GeminiNodeConfig,
+      options?: { resetPreview?: boolean },
+    ) => {
+      updateGeminiNode(nodeId, (node) => {
+        const nextConfig = mutator(node.config);
+        const shouldReset = options?.resetPreview !== false;
+        const finalConfig = shouldReset
+          ? { ...nextConfig, lastPreview: undefined }
+          : nextConfig;
+        if (finalConfig === node.config) {
+          return node;
+        }
+        return {
+          ...node,
+          config: finalConfig,
+        };
+      });
+    },
+    [updateGeminiNode],
+  );
+
+  const updateHttpNode = useCallback(
+    (
+      nodeId: string,
+      mutator: (
+        node: WorkflowNode<"http">,
+      ) => WorkflowNode<"http"> | null | undefined,
+    ) => {
+      updateActiveWorkflow((workflow) => {
+        const index = workflow.nodes.findIndex((node) => node.id === nodeId);
+        if (index === -1) {
+          return workflow;
+        }
+        const currentNode = workflow.nodes[index];
+        if (currentNode.kind !== "http") {
+          return workflow;
+        }
+        const updated = mutator(currentNode as WorkflowNode<"http">);
+        if (!updated || updated === currentNode) {
+          return workflow;
+        }
+        const nextNodes = [...workflow.nodes];
+        nextNodes[index] = updated;
+        return {
+          ...workflow,
+          nodes: nextNodes,
+        };
+      });
+    },
+    [updateActiveWorkflow],
+  );
+
+  const updateHttpConfig = useCallback(
+    (
+      nodeId: string,
+      mutator: (config: HttpNodeConfig) => HttpNodeConfig,
+      options?: { resetPreview?: boolean },
+    ) => {
+      updateHttpNode(nodeId, (node) => {
+        const nextConfig = mutator(node.config);
+        const shouldReset = options?.resetPreview !== false;
+        const finalConfig = shouldReset
+          ? { ...nextConfig, lastPreview: undefined }
+          : nextConfig;
+        if (finalConfig === node.config) {
+          return node;
+        }
+        return {
+          ...node,
+          config: finalConfig,
+        };
+      });
+    },
+    [updateHttpNode],
+  );
+
+  const addGeminiVariable = useCallback(
+    (node: WorkflowNode<"gemini">) => {
+      const existing = new Set(node.config.inputVariables);
+      let counter = node.config.inputVariables.length + 1;
+      let candidate = `input${counter}`;
+      while (existing.has(candidate)) {
+        counter += 1;
+        candidate = `input${counter}`;
+      }
+
+      updateGeminiConfig(node.id, (config) => ({
+        ...config,
+        inputVariables: [...config.inputVariables, candidate],
+        testInputs: {
+          ...config.testInputs,
+          [candidate]: "",
+        },
+      }));
+    },
+    [updateGeminiConfig],
+  );
+
+  const renameGeminiVariable = useCallback(
+    (node: WorkflowNode<"gemini">, index: number, rawName: string) => {
+      const currentName = node.config.inputVariables[index];
+      const trimmed = rawName.trim();
+      if (!trimmed) {
+        return;
+      }
+
+      const sanitized = trimmed.replace(/[^a-zA-Z0-9_]/g, "_");
+      const others = node.config.inputVariables.filter((_, i) => i !== index);
+      let candidate = sanitized;
+      let suffix = 1;
+      while (others.includes(candidate)) {
+        candidate = `${sanitized}_${suffix}`;
+        suffix += 1;
+      }
+
+      if (candidate === currentName) {
+        return;
+      }
+
+      updateGeminiConfig(
+        node.id,
+        (config) => {
+          const nextVariables = [...config.inputVariables];
+          nextVariables[index] = candidate;
+          const { [currentName]: previousValue, ...restInputs } =
+            config.testInputs;
+          return {
+            ...config,
+            inputVariables: nextVariables,
+            testInputs: {
+              ...restInputs,
+              [candidate]: previousValue ?? "",
+            },
+          };
+        },
+        { resetPreview: false },
+      );
+    },
+    [updateGeminiConfig],
+  );
+
+  const removeGeminiVariable = useCallback(
+    (node: WorkflowNode<"gemini">, variableName: string) => {
+      updateGeminiConfig(node.id, (config) => {
+        if (!config.inputVariables.includes(variableName)) {
+          return config;
+        }
+        const nextVariables = config.inputVariables.filter(
+          (name) => name !== variableName,
+        );
+        const restInputs = { ...config.testInputs };
+        delete restInputs[variableName];
+        return {
+          ...config,
+          inputVariables: nextVariables,
+          testInputs: restInputs,
+        };
+      });
+    },
+    [updateGeminiConfig],
+  );
+
+  const updateGeminiTestInput = useCallback(
+    (node: WorkflowNode<"gemini">, variableName: string, value: string) => {
+      updateGeminiConfig(
+        node.id,
+        (config) => ({
+          ...config,
+          testInputs: {
+            ...config.testInputs,
+            [variableName]: value,
+          },
+        }),
+        { resetPreview: false },
+      );
+    },
+    [updateGeminiConfig],
+  );
+
+  const addHttpVariable = useCallback(
+    (node: WorkflowNode<"http">) => {
+      const existing = new Set(node.config.inputVariables);
+      let counter = node.config.inputVariables.length + 1;
+      let candidate = `input${counter}`;
+      while (existing.has(candidate)) {
+        counter += 1;
+        candidate = `input${counter}`;
+      }
+
+      updateHttpConfig(node.id, (config) => ({
+        ...config,
+        inputVariables: [...config.inputVariables, candidate],
+        testInputs: {
+          ...config.testInputs,
+          [candidate]: "",
+        },
+      }));
+    },
+    [updateHttpConfig],
+  );
+
+  const renameHttpVariable = useCallback(
+    (node: WorkflowNode<"http">, index: number, rawName: string) => {
+      const currentName = node.config.inputVariables[index];
+      const trimmed = rawName.trim();
+      if (!trimmed) {
+        return;
+      }
+
+      const sanitized = trimmed.replace(/[^a-zA-Z0-9_]/g, "_");
+      const others = node.config.inputVariables.filter((_, i) => i !== index);
+      let candidate = sanitized;
+      let suffix = 1;
+      while (others.includes(candidate)) {
+        candidate = `${sanitized}_${suffix}`;
+        suffix += 1;
+      }
+
+      if (candidate === currentName) {
+        return;
+      }
+
+      updateHttpConfig(
+        node.id,
+        (config) => {
+          const nextVariables = [...config.inputVariables];
+          nextVariables[index] = candidate;
+          const { [currentName]: previousValue, ...restInputs } =
+            config.testInputs;
+          return {
+            ...config,
+            inputVariables: nextVariables,
+            testInputs: {
+              ...restInputs,
+              [candidate]: previousValue ?? "",
+            },
+          };
+        },
+        { resetPreview: false },
+      );
+    },
+    [updateHttpConfig],
+  );
+
+  const removeHttpVariable = useCallback(
+    (node: WorkflowNode<"http">, variableName: string) => {
+      updateHttpConfig(node.id, (config) => {
+        if (!config.inputVariables.includes(variableName)) {
+          return config;
+        }
+        const nextVariables = config.inputVariables.filter(
+          (variable) => variable !== variableName,
+        );
+        const restInputs = { ...config.testInputs };
+        delete restInputs[variableName];
+        return {
+          ...config,
+          inputVariables: nextVariables,
+          testInputs: restInputs,
+        };
+      });
+    },
+    [updateHttpConfig],
+  );
+
+  const updateHttpTestInput = useCallback(
+    (node: WorkflowNode<"http">, variableName: string, value: string) => {
+      updateHttpConfig(
+        node.id,
+        (config) => ({
+          ...config,
+          testInputs: {
+            ...config.testInputs,
+            [variableName]: value,
+          },
+        }),
+        { resetPreview: false },
+      );
+    },
+    [updateHttpConfig],
+  );
+
+  const addHttpKeyValue = useCallback(
+    (node: WorkflowNode<"http">, field: "headers" | "queryParams") => {
+      updateHttpConfig(node.id, (config) => ({
+        ...config,
+        [field]: [...config[field], createHttpKeyValue()],
+      }));
+    },
+    [updateHttpConfig],
+  );
+
+  const updateHttpKeyValue = useCallback(
+    (
+      node: WorkflowNode<"http">,
+      field: "headers" | "queryParams",
+      keyValueId: string,
+      mutator: (entry: HttpKeyValue) => HttpKeyValue,
+    ) => {
+      updateHttpConfig(node.id, (config) => {
+        const index = config[field].findIndex(
+          (entry) => entry.id === keyValueId,
+        );
+        if (index === -1) {
+          return config;
+        }
+        const nextEntries = [...config[field]];
+        nextEntries[index] = mutator(nextEntries[index]);
+        return {
+          ...config,
+          [field]: nextEntries,
+        };
+      });
+    },
+    [updateHttpConfig],
+  );
+
+  const removeHttpKeyValue = useCallback(
+    (
+      node: WorkflowNode<"http">,
+      field: "headers" | "queryParams",
+      id: string,
+    ) => {
+      updateHttpConfig(node.id, (config) => ({
+        ...config,
+        [field]: config[field].filter((entry) => entry.id !== id),
+      }));
+    },
+    [updateHttpConfig],
+  );
+
+  const runGeminiPreview = useCallback(
+    async (node: WorkflowNode<"gemini">) => {
+      if (!geminiApiKey) {
+        setPreviewError("Add a Gemini API key above to run previews.");
+        return;
+      }
+
+      setIsPreviewRunning(true);
+      setPreviewError(null);
+
+      const compiledPrompt = interpolateTemplate(
+        node.config.promptTemplate,
+        node.config.inputVariables.reduce<Record<string, string>>(
+          (accumulator, variable) => {
+            accumulator[variable] = node.config.testInputs[variable] ?? "";
+            return accumulator;
+          },
+          {},
+        ),
+      );
+
+      try {
+        const { text, usage } = await generateGeminiText({
+          apiKey: geminiApiKey,
+          model: node.config.model,
+          prompt: compiledPrompt,
+          systemInstruction: node.config.systemInstruction,
+          temperature: node.config.temperature,
+          topP: node.config.topP,
+          topK: node.config.topK,
+          maxOutputTokens: node.config.maxOutputTokens,
+          responseMimeType: node.config.responseMimeType,
+        });
+
+        updateGeminiConfig(
+          node.id,
+          (config) => ({
+            ...config,
+            lastPreview: {
+              executedAt: new Date().toISOString(),
+              outputText: text,
+              responseMimeType: config.responseMimeType,
+              usage,
+            },
+          }),
+          { resetPreview: false },
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Failed to run Gemini preview.";
+        setPreviewError(message);
+      } finally {
+        setIsPreviewRunning(false);
+      }
+    },
+    [geminiApiKey, updateGeminiConfig],
+  );
+
+  const runHttpPreview = useCallback(
+    async (node: WorkflowNode<"http">) => {
+      setIsHttpPreviewRunning(true);
+      setHttpPreviewError(null);
+
+      const variables = node.config.inputVariables.reduce<
+        Record<string, string>
+      >((accumulator, variable) => {
+        accumulator[variable] = node.config.testInputs[variable] ?? "";
+        return accumulator;
+      }, {});
+
+      try {
+        const result: HttpRequestExecution = await executeHttpRequest({
+          method: node.config.method,
+          url: node.config.url,
+          queryParams: node.config.queryParams,
+          headers: node.config.headers,
+          bodyTemplate: node.config.bodyTemplate,
+          bodyMimeType: node.config.bodyMimeType,
+          auth: node.config.auth,
+          timeoutMs: node.config.timeoutMs,
+          variables,
+        });
+
+        if (result.error && result.error.type === "validation") {
+          setHttpPreviewError(result.error.message);
+          return;
+        }
+
+        updateHttpConfig(
+          node.id,
+          (config) => ({
+            ...config,
+            lastPreview: {
+              executedAt: new Date().toISOString(),
+              request: {
+                method: node.config.method,
+                url: result.requestUrl,
+              },
+              response: result.response,
+              error: result.error?.message,
+              usage: {
+                httpCalls: result.response ? 1 : 0,
+                runtimeMs: result.response?.durationMs ?? 0,
+              },
+            },
+          }),
+          { resetPreview: false },
+        );
+
+        if (result.error) {
+          setHttpPreviewError(result.error.message);
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to run request.";
+        setHttpPreviewError(message);
+      } finally {
+        setIsHttpPreviewRunning(false);
+      }
+    },
+    [updateHttpConfig],
+  );
+
   const [selectedNodeId, setSelectedNodeId] = useState<string>();
+
+  useEffect(() => {
+    if (selectedNodeId && !nodes.some((node) => node.id === selectedNodeId)) {
+      setSelectedNodeId(undefined);
+    }
+  }, [nodes, selectedNodeId]);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
@@ -495,7 +1098,7 @@ const Builder = () => {
   }, []);
 
   const addNode = useCallback(
-    (kind: PaletteKind, position: { x: number; y: number }) => {
+    (kind: WorkflowNodeKind, position: { x: number; y: number }) => {
       const definition = paletteLookup.get(kind);
       if (!definition) return;
 
@@ -504,38 +1107,51 @@ const Builder = () => {
         y: position.y - NODE_HEIGHT / 2,
       });
 
-      const newNode: WorkflowNode = {
-        id: createNodeId(),
+      const newNode = createWorkflowNode({
         kind,
         title: definition.title,
         description: definition.description,
         position: nodePosition,
-      };
+      });
 
-      setNodes((prev) => [...prev, newNode]);
+      updateActiveWorkflow((workflow) => ({
+        ...workflow,
+        nodes: [...workflow.nodes, newNode],
+      }));
       setSelectedNodeId(newNode.id);
     },
-    [paletteLookup],
+    [paletteLookup, updateActiveWorkflow],
   );
 
   const moveNode = useCallback(
     (id: string, nextPosition: { x: number; y: number }) => {
-      setNodes((prev) =>
-        prev.map((node) =>
-          node.id === id
-            ? {
-                ...node,
-                position: snapPosition(nextPosition),
-              }
-            : node,
-        ),
-      );
+      updateActiveWorkflow((workflow) => {
+        const target = workflow.nodes.find((node) => node.id === id);
+        if (!target) return workflow;
+
+        const snapped = snapPosition(nextPosition);
+        if (
+          target.position.x === snapped.x &&
+          target.position.y === snapped.y
+        ) {
+          return workflow;
+        }
+
+        const nextNodes = workflow.nodes.map((node) =>
+          node.id === id ? { ...node, position: snapped } : node,
+        );
+
+        return {
+          ...workflow,
+          nodes: nextNodes,
+        };
+      });
     },
-    [],
+    [updateActiveWorkflow],
   );
 
   const handlePaletteDragStart = useCallback(
-    (event: React.DragEvent<HTMLButtonElement>, kind: PaletteKind) => {
+    (event: React.DragEvent<HTMLButtonElement>, kind: WorkflowNodeKind) => {
       event.dataTransfer.setData("application/lumio-node", kind);
       event.dataTransfer.setData("text/plain", kind);
       event.dataTransfer.effectAllowed = "copy";
@@ -557,7 +1173,7 @@ const Builder = () => {
     (event: React.DragEvent<HTMLDivElement>) => {
       event.preventDefault();
       const kind = event.dataTransfer.getData("application/lumio-node") as
-        | PaletteKind
+        | WorkflowNodeKind
         | "";
       if (!kind) return;
 
@@ -587,6 +1203,85 @@ const Builder = () => {
       {} as Record<string, PaletteItemDefinition[]>,
     );
   }, [paletteItems]);
+
+  const selectedNode = useMemo(
+    () => nodes.find((node) => node.id === selectedNodeId),
+    [nodes, selectedNodeId],
+  );
+
+  const selectedGeminiNode =
+    selectedNode?.kind === "gemini"
+      ? (selectedNode as WorkflowNode<"gemini">)
+      : null;
+  const geminiLastPreview = selectedGeminiNode?.config.lastPreview;
+  const formattedPreviewOutput = useMemo(() => {
+    if (!geminiLastPreview?.outputText) {
+      return null;
+    }
+    if (geminiLastPreview.responseMimeType === "application/json") {
+      try {
+        return JSON.stringify(
+          JSON.parse(geminiLastPreview.outputText),
+          null,
+          2,
+        );
+      } catch {
+        return geminiLastPreview.outputText;
+      }
+    }
+    return geminiLastPreview.outputText;
+  }, [geminiLastPreview]);
+  const previewTimestamp = geminiLastPreview?.executedAt
+    ? new Date(geminiLastPreview.executedAt).toLocaleTimeString()
+    : null;
+
+  const [isPreviewRunning, setIsPreviewRunning] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [apiKeyDraft, setApiKeyDraft] = useState(storedGeminiKey);
+  const [isHttpPreviewRunning, setIsHttpPreviewRunning] = useState(false);
+  const [httpPreviewError, setHttpPreviewError] = useState<string | null>(null);
+  const selectedHttpNode =
+    selectedNode?.kind === "http"
+      ? (selectedNode as WorkflowNode<"http">)
+      : null;
+  const httpLastPreview = selectedHttpNode?.config.lastPreview;
+  const formattedHttpBody = useMemo(() => {
+    const bodyJson = httpLastPreview?.response?.bodyJson;
+    if (bodyJson != null) {
+      try {
+        return JSON.stringify(bodyJson, null, 2);
+      } catch {
+        // Fall back to text rendering
+      }
+    }
+    return httpLastPreview?.response?.bodyText ?? null;
+  }, [httpLastPreview]);
+  const formattedHttpHeaders = useMemo(() => {
+    if (!httpLastPreview?.response?.headers.length) {
+      return null;
+    }
+    return httpLastPreview.response.headers
+      .map(({ key, value }) => `${key}: ${value}`)
+      .join("\n");
+  }, [httpLastPreview]);
+  const httpPreviewTimestamp = httpLastPreview?.executedAt
+    ? new Date(httpLastPreview.executedAt).toLocaleTimeString()
+    : null;
+
+  useEffect(() => {
+    setApiKeyDraft(storedGeminiKey);
+  }, [storedGeminiKey]);
+
+  useEffect(() => {
+    setPreviewError(null);
+    setIsPreviewRunning(false);
+    setHttpPreviewError(null);
+    setIsHttpPreviewRunning(false);
+  }, [selectedNodeId]);
+
+  useEffect(() => {
+    setPreviewError(null);
+  }, [geminiApiKey]);
 
   const getCanvasMetrics = useCallback(() => {
     if (!canvasRef.current) return null;
@@ -683,7 +1378,15 @@ const Builder = () => {
                     size="sm"
                     disabled={nodes.length === 0}
                     onClick={() => {
-                      setNodes([]);
+                      updateActiveWorkflow((workflow) => {
+                        if (workflow.nodes.length === 0) {
+                          return workflow;
+                        }
+                        return {
+                          ...workflow,
+                          nodes: [],
+                        };
+                      });
                       setSelectedNodeId(undefined);
                       centerCanvas();
                     }}
@@ -768,16 +1471,985 @@ const Builder = () => {
                   Select a node to edit inputs, outputs, and budgets.
                 </Text>
               </div>
-              {selectedNodeId ? (
-                <div className={styles.inspectorDetails}>
-                  <Text as="p" size="sm">
-                    Node configuration coming soon.
+              <div className={styles.apiKeyPanel}>
+                <div className={styles.sectionHeader}>
+                  <Text as="h3" size="xs">
+                    Gemini API key
                   </Text>
                   <Text as="p" size="xs" className={styles.inspectorHint}>
-                    Drag nodes to rearrange; wiring and budget controls land in
-                    the next iteration.
+                    {storedGeminiKey
+                      ? "Stored locally"
+                      : geminiApiKey
+                        ? "Using VITE_GEMINI_API_KEY"
+                        : "No key configured"}
                   </Text>
                 </div>
+                <div className={styles.apiKeyRow}>
+                  <Input
+                    id="gemini-api-key"
+                    fieldSize="sm"
+                    type="password"
+                    placeholder="Paste or override key"
+                    value={apiKeyDraft}
+                    onChange={(event) =>
+                      setApiKeyDraft(event.currentTarget.value)
+                    }
+                  />
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => persistGeminiKey(apiKeyDraft)}
+                    disabled={apiKeyDraft.trim() === storedGeminiKey.trim()}
+                  >
+                    Save
+                  </Button>
+                  {storedGeminiKey ? (
+                    <Button
+                      variant="tertiary"
+                      size="sm"
+                      onClick={() => {
+                        clearApiKey();
+                        setApiKeyDraft("");
+                      }}
+                    >
+                      Clear
+                    </Button>
+                  ) : null}
+                </div>
+                <Text as="p" size="xs" className={styles.inspectorHint}>
+                  Keys are stored in this browser only. Leave blank to fall back
+                  to VITE_GEMINI_API_KEY.
+                </Text>
+              </div>
+              {selectedNode ? (
+                selectedNode.kind === "gemini" && selectedGeminiNode ? (
+                  <div className={styles.inspectorDetails}>
+                    <Input
+                      id={`node-title-${selectedGeminiNode.id}`}
+                      fieldSize="sm"
+                      label="Node title"
+                      value={selectedGeminiNode.title}
+                      onChange={(event) => {
+                        const value = event.currentTarget.value;
+                        updateGeminiNode(selectedGeminiNode.id, (node) => ({
+                          ...node,
+                          title: value,
+                        }));
+                      }}
+                    />
+                    <Select
+                      id={`gemini-model-${selectedGeminiNode.id}`}
+                      fieldSize="sm"
+                      label="Model"
+                      value={selectedGeminiNode.config.model}
+                      onChange={(event) => {
+                        const value = event.currentTarget.value;
+                        if (value === selectedGeminiNode.config.model) {
+                          return;
+                        }
+                        updateGeminiConfig(selectedGeminiNode.id, (config) => ({
+                          ...config,
+                          model: value,
+                        }));
+                      }}
+                    >
+                      {GEMINI_MODEL_OPTIONS.map((model) => (
+                        <option key={model} value={model}>
+                          {model}
+                        </option>
+                      ))}
+                    </Select>
+                    <Textarea
+                      id={`gemini-system-${selectedGeminiNode.id}`}
+                      fieldSize="md"
+                      label="System instruction"
+                      placeholder="Optional guardrails for tone or format."
+                      value={selectedGeminiNode.config.systemInstruction}
+                      onChange={(event) =>
+                        updateGeminiConfig(selectedGeminiNode.id, (config) => ({
+                          ...config,
+                          systemInstruction: event.currentTarget.value,
+                        }))
+                      }
+                    />
+                    <Textarea
+                      id={`gemini-template-${selectedGeminiNode.id}`}
+                      fieldSize="md"
+                      label="Prompt template"
+                      note="Use {{variable}} placeholders to insert inputs."
+                      value={selectedGeminiNode.config.promptTemplate}
+                      onChange={(event) =>
+                        updateGeminiConfig(selectedGeminiNode.id, (config) => ({
+                          ...config,
+                          promptTemplate: event.currentTarget.value,
+                        }))
+                      }
+                    />
+                    <div className={styles.parameterGrid}>
+                      <Input
+                        id={`gemini-temperature-${selectedGeminiNode.id}`}
+                        fieldSize="sm"
+                        type="number"
+                        step="0.05"
+                        min="0"
+                        max="2"
+                        label="Temperature"
+                        value={selectedGeminiNode.config.temperature}
+                        onChange={(event) => {
+                          const next = Number(event.currentTarget.value);
+                          if (
+                            Number.isNaN(next) ||
+                            next === selectedGeminiNode.config.temperature
+                          ) {
+                            return;
+                          }
+                          updateGeminiConfig(
+                            selectedGeminiNode.id,
+                            (config) => ({
+                              ...config,
+                              temperature: next,
+                            }),
+                          );
+                        }}
+                      />
+                      <Input
+                        id={`gemini-top-p-${selectedGeminiNode.id}`}
+                        fieldSize="sm"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="1"
+                        label="Top P"
+                        value={selectedGeminiNode.config.topP}
+                        onChange={(event) => {
+                          const next = Number(event.currentTarget.value);
+                          if (
+                            Number.isNaN(next) ||
+                            next === selectedGeminiNode.config.topP
+                          ) {
+                            return;
+                          }
+                          updateGeminiConfig(
+                            selectedGeminiNode.id,
+                            (config) => ({
+                              ...config,
+                              topP: next,
+                            }),
+                          );
+                        }}
+                      />
+                      <Input
+                        id={`gemini-top-k-${selectedGeminiNode.id}`}
+                        fieldSize="sm"
+                        type="number"
+                        step="1"
+                        min="0"
+                        label="Top K"
+                        value={selectedGeminiNode.config.topK}
+                        onChange={(event) => {
+                          const next = Number(event.currentTarget.value);
+                          const rounded = Math.max(0, Math.round(next));
+                          if (
+                            Number.isNaN(next) ||
+                            rounded === selectedGeminiNode.config.topK
+                          ) {
+                            return;
+                          }
+                          updateGeminiConfig(
+                            selectedGeminiNode.id,
+                            (config) => ({
+                              ...config,
+                              topK: rounded,
+                            }),
+                          );
+                        }}
+                      />
+                      <Input
+                        id={`gemini-max-output-${selectedGeminiNode.id}`}
+                        fieldSize="sm"
+                        type="number"
+                        step="1"
+                        min="1"
+                        label="Max output tokens"
+                        value={selectedGeminiNode.config.maxOutputTokens ?? ""}
+                        onChange={(event) => {
+                          const raw = event.currentTarget.value;
+                          const parsed = Number(raw);
+                          const normalized =
+                            raw === "" || Number.isNaN(parsed)
+                              ? undefined
+                              : Math.max(1, Math.round(parsed));
+                          if (
+                            normalized ===
+                              selectedGeminiNode.config.maxOutputTokens &&
+                            (normalized !== undefined || raw !== "")
+                          ) {
+                            return;
+                          }
+                          updateGeminiConfig(
+                            selectedGeminiNode.id,
+                            (config) => ({
+                              ...config,
+                              maxOutputTokens: normalized,
+                            }),
+                          );
+                        }}
+                      />
+                      <Select
+                        id={`gemini-mime-${selectedGeminiNode.id}`}
+                        fieldSize="sm"
+                        label="Response type"
+                        value={
+                          selectedGeminiNode.config.responseMimeType ??
+                          "text/plain"
+                        }
+                        onChange={(event) => {
+                          const value = event.currentTarget.value as
+                            | "text/plain"
+                            | "application/json";
+                          if (
+                            value === selectedGeminiNode.config.responseMimeType
+                          ) {
+                            return;
+                          }
+                          updateGeminiConfig(
+                            selectedGeminiNode.id,
+                            (config) => ({
+                              ...config,
+                              responseMimeType: value,
+                            }),
+                          );
+                        }}
+                      >
+                        {GEMINI_RESPONSE_MIME_TYPES.map(({ value, label }) => (
+                          <option key={value} value={value}>
+                            {label}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+
+                    <div className={styles.inspectorSection}>
+                      <div className={styles.sectionHeader}>
+                        <Text as="h4" size="xs">
+                          Input variables
+                        </Text>
+                        <Button
+                          variant="tertiary"
+                          size="sm"
+                          onClick={() => addGeminiVariable(selectedGeminiNode)}
+                        >
+                          <Icon.PlusCircle size="sm" />
+                          Add variable
+                        </Button>
+                      </div>
+                      {selectedGeminiNode.config.inputVariables.length === 0 ? (
+                        <Text as="p" size="xs" className={styles.inspectorHint}>
+                          Variables insert dynamic values into the prompt using{" "}
+                          <span
+                            className={styles.codeInline}
+                          >{`{{name}}`}</span>{" "}
+                          placeholders.
+                        </Text>
+                      ) : (
+                        selectedGeminiNode.config.inputVariables.map(
+                          (variable, index) => (
+                            <div key={variable} className={styles.variableRow}>
+                              <Input
+                                id={`gemini-variable-${selectedGeminiNode.id}-${variable}`}
+                                fieldSize="sm"
+                                label={`Variable ${index + 1}`}
+                                value={variable}
+                                onChange={(event) =>
+                                  renameGeminiVariable(
+                                    selectedGeminiNode,
+                                    index,
+                                    event.currentTarget.value,
+                                  )
+                                }
+                              />
+                              <Button
+                                variant="tertiary"
+                                size="sm"
+                                title="Remove variable"
+                                onClick={() =>
+                                  removeGeminiVariable(
+                                    selectedGeminiNode,
+                                    variable,
+                                  )
+                                }
+                              >
+                                <Icon.MinusCircle size="sm" />
+                              </Button>
+                            </div>
+                          ),
+                        )
+                      )}
+                    </div>
+
+                    <div className={styles.inspectorSection}>
+                      <Text as="h4" size="xs">
+                        Preview inputs
+                      </Text>
+                      {selectedGeminiNode.config.inputVariables.length === 0 ? (
+                        <Text as="p" size="xs" className={styles.inspectorHint}>
+                          Add a variable to configure preview inputs.
+                        </Text>
+                      ) : (
+                        selectedGeminiNode.config.inputVariables.map(
+                          (variable) => (
+                            <Textarea
+                              key={variable}
+                              id={`gemini-test-${selectedGeminiNode.id}-${variable}`}
+                              fieldSize="md"
+                              label={variable}
+                              value={
+                                selectedGeminiNode.config.testInputs[
+                                  variable
+                                ] ?? ""
+                              }
+                              onChange={(event) =>
+                                updateGeminiTestInput(
+                                  selectedGeminiNode,
+                                  variable,
+                                  event.currentTarget.value,
+                                )
+                              }
+                            />
+                          ),
+                        )
+                      )}
+                    </div>
+
+                    <div className={styles.inspectorActions}>
+                      <Button
+                        variant="primary"
+                        size="md"
+                        onClick={() =>
+                          void runGeminiPreview(selectedGeminiNode)
+                        }
+                        disabled={isPreviewRunning}
+                      >
+                        <Icon.MagicWand02 size="sm" />
+                        {isPreviewRunning
+                          ? "Running preview..."
+                          : "Run preview"}
+                      </Button>
+                    </div>
+                    {previewError ? (
+                      <Text as="p" size="xs" className={styles.errorMessage}>
+                        {previewError}
+                      </Text>
+                    ) : null}
+                    {formattedPreviewOutput ? (
+                      <div className={styles.previewPanel}>
+                        <Text
+                          as="h4"
+                          size="xs"
+                          className={styles.previewHeader}
+                        >
+                          Last preview
+                          {previewTimestamp ? ` · ${previewTimestamp}` : ""}
+                        </Text>
+                        <pre className={styles.previewOutput}>
+                          {formattedPreviewOutput}
+                        </pre>
+                        {geminiLastPreview?.usage ? (
+                          <Text as="p" size="xs" className={styles.previewMeta}>
+                            Prompt {geminiLastPreview.usage.promptTokens ?? "—"}
+                            {" · "}
+                            Response{" "}
+                            {geminiLastPreview.usage.responseTokens ?? "—"}
+                            {" · "}
+                            Total {geminiLastPreview.usage.totalTokens ?? "—"}
+                          </Text>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : selectedNode.kind === "http" && selectedHttpNode ? (
+                  <div className={styles.inspectorDetails}>
+                    <Input
+                      id={`node-title-${selectedHttpNode.id}`}
+                      fieldSize="sm"
+                      label="Node title"
+                      value={selectedHttpNode.title}
+                      onChange={(event) => {
+                        const value = event.currentTarget.value;
+                        updateHttpNode(selectedHttpNode.id, (node) => ({
+                          ...node,
+                          title: value,
+                        }));
+                      }}
+                    />
+
+                    <div className={styles.inspectorSection}>
+                      <div className={styles.parameterGrid}>
+                        <Select
+                          id={`http-method-${selectedHttpNode.id}`}
+                          fieldSize="sm"
+                          label="Method"
+                          value={selectedHttpNode.config.method}
+                          onChange={(event) => {
+                            const value = event.currentTarget
+                              .value as HttpMethod;
+                            if (value === selectedHttpNode.config.method) {
+                              return;
+                            }
+                            updateHttpConfig(selectedHttpNode.id, (config) => ({
+                              ...config,
+                              method: value,
+                            }));
+                          }}
+                        >
+                          {HTTP_METHOD_OPTIONS.map((method) => (
+                            <option key={method} value={method}>
+                              {method}
+                            </option>
+                          ))}
+                        </Select>
+                        <Input
+                          id={`http-url-${selectedHttpNode.id}`}
+                          fieldSize="md"
+                          label="Request URL"
+                          placeholder="https://api.example.com/resource"
+                          value={selectedHttpNode.config.url}
+                          onChange={(event) => {
+                            const value = event.currentTarget.value;
+                            updateHttpConfig(selectedHttpNode.id, (config) => ({
+                              ...config,
+                              url: value,
+                            }));
+                          }}
+                        />
+                        <Input
+                          id={`http-timeout-${selectedHttpNode.id}`}
+                          fieldSize="sm"
+                          type="number"
+                          min="0"
+                          step="100"
+                          label="Timeout (ms)"
+                          value={selectedHttpNode.config.timeoutMs}
+                          onChange={(event) => {
+                            const parsed = Number(event.currentTarget.value);
+                            updateHttpConfig(selectedHttpNode.id, (config) => {
+                              const normalized = Number.isNaN(parsed)
+                                ? config.timeoutMs
+                                : Math.max(0, Math.round(parsed));
+                              if (normalized === config.timeoutMs) {
+                                return config;
+                              }
+                              return {
+                                ...config,
+                                timeoutMs: normalized,
+                              };
+                            });
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className={styles.inspectorSection}>
+                      <div className={styles.sectionHeader}>
+                        <Text as="h4" size="xs">
+                          Query parameters
+                        </Text>
+                        <Button
+                          variant="tertiary"
+                          size="sm"
+                          onClick={() =>
+                            addHttpKeyValue(selectedHttpNode, "queryParams")
+                          }
+                        >
+                          <Icon.PlusCircle size="sm" />
+                          Add query param
+                        </Button>
+                      </div>
+                      {selectedHttpNode.config.queryParams.length === 0 ? (
+                        <Text as="p" size="xs" className={styles.inspectorHint}>
+                          Append query string values to the request.
+                        </Text>
+                      ) : (
+                        selectedHttpNode.config.queryParams.map(
+                          (param, index) => (
+                            <div key={param.id} className={styles.keyValueRow}>
+                              <Input
+                                id={`http-query-key-${selectedHttpNode.id}-${param.id}`}
+                                fieldSize="sm"
+                                label={`Key ${index + 1}`}
+                                value={param.key}
+                                onChange={(event) =>
+                                  updateHttpKeyValue(
+                                    selectedHttpNode,
+                                    "queryParams",
+                                    param.id,
+                                    (entry) => ({
+                                      ...entry,
+                                      key: event.currentTarget.value,
+                                    }),
+                                  )
+                                }
+                              />
+                              <Input
+                                id={`http-query-value-${selectedHttpNode.id}-${param.id}`}
+                                fieldSize="sm"
+                                label={`Value ${index + 1}`}
+                                value={param.value}
+                                onChange={(event) =>
+                                  updateHttpKeyValue(
+                                    selectedHttpNode,
+                                    "queryParams",
+                                    param.id,
+                                    (entry) => ({
+                                      ...entry,
+                                      value: event.currentTarget.value,
+                                    }),
+                                  )
+                                }
+                              />
+                              <Button
+                                variant="tertiary"
+                                size="sm"
+                                title="Remove query param"
+                                onClick={() =>
+                                  removeHttpKeyValue(
+                                    selectedHttpNode,
+                                    "queryParams",
+                                    param.id,
+                                  )
+                                }
+                              >
+                                <Icon.MinusCircle size="sm" />
+                              </Button>
+                            </div>
+                          ),
+                        )
+                      )}
+                    </div>
+
+                    <div className={styles.inspectorSection}>
+                      <div className={styles.sectionHeader}>
+                        <Text as="h4" size="xs">
+                          Headers
+                        </Text>
+                        <Button
+                          variant="tertiary"
+                          size="sm"
+                          onClick={() =>
+                            addHttpKeyValue(selectedHttpNode, "headers")
+                          }
+                        >
+                          <Icon.PlusCircle size="sm" />
+                          Add header
+                        </Button>
+                      </div>
+                      {selectedHttpNode.config.headers.length === 0 ? (
+                        <Text as="p" size="xs" className={styles.inspectorHint}>
+                          Include custom headers such as Authorization or
+                          Content-Type.
+                        </Text>
+                      ) : (
+                        selectedHttpNode.config.headers.map((header, index) => (
+                          <div key={header.id} className={styles.keyValueRow}>
+                            <Input
+                              id={`http-header-key-${selectedHttpNode.id}-${header.id}`}
+                              fieldSize="sm"
+                              label={`Key ${index + 1}`}
+                              value={header.key}
+                              onChange={(event) =>
+                                updateHttpKeyValue(
+                                  selectedHttpNode,
+                                  "headers",
+                                  header.id,
+                                  (entry) => ({
+                                    ...entry,
+                                    key: event.currentTarget.value,
+                                  }),
+                                )
+                              }
+                            />
+                            <Input
+                              id={`http-header-value-${selectedHttpNode.id}-${header.id}`}
+                              fieldSize="sm"
+                              label={`Value ${index + 1}`}
+                              value={header.value}
+                              onChange={(event) =>
+                                updateHttpKeyValue(
+                                  selectedHttpNode,
+                                  "headers",
+                                  header.id,
+                                  (entry) => ({
+                                    ...entry,
+                                    value: event.currentTarget.value,
+                                  }),
+                                )
+                              }
+                            />
+                            <Button
+                              variant="tertiary"
+                              size="sm"
+                              title="Remove header"
+                              onClick={() =>
+                                removeHttpKeyValue(
+                                  selectedHttpNode,
+                                  "headers",
+                                  header.id,
+                                )
+                              }
+                            >
+                              <Icon.MinusCircle size="sm" />
+                            </Button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    <div className={styles.inspectorSection}>
+                      <div className={styles.sectionHeader}>
+                        <Text as="h4" size="xs">
+                          Body
+                        </Text>
+                      </div>
+                      <Select
+                        id={`http-body-mime-${selectedHttpNode.id}`}
+                        fieldSize="sm"
+                        label="Content type"
+                        value={selectedHttpNode.config.bodyMimeType}
+                        onChange={(event) => {
+                          const value = event.currentTarget.value as
+                            | "application/json"
+                            | "text/plain";
+                          if (value === selectedHttpNode.config.bodyMimeType) {
+                            return;
+                          }
+                          updateHttpConfig(selectedHttpNode.id, (config) => ({
+                            ...config,
+                            bodyMimeType: value,
+                          }));
+                        }}
+                      >
+                        {HTTP_BODY_MIME_TYPES.map(({ value, label }) => (
+                          <option key={value} value={value}>
+                            {label}
+                          </option>
+                        ))}
+                      </Select>
+                      <Textarea
+                        id={`http-body-${selectedHttpNode.id}`}
+                        fieldSize="md"
+                        label="Request body"
+                        note="Ignored for GET and HEAD requests. Use {{variable}} placeholders to inject values."
+                        value={selectedHttpNode.config.bodyTemplate}
+                        onChange={(event) =>
+                          updateHttpConfig(selectedHttpNode.id, (config) => ({
+                            ...config,
+                            bodyTemplate: event.currentTarget.value,
+                          }))
+                        }
+                      />
+                      {(selectedHttpNode.config.method === "GET" ||
+                        selectedHttpNode.config.method === "HEAD") && (
+                        <Text as="p" size="xs" className={styles.inspectorHint}>
+                          Bodies are automatically skipped for{" "}
+                          {selectedHttpNode.config.method} requests.
+                        </Text>
+                      )}
+                    </div>
+
+                    <div className={styles.inspectorSection}>
+                      <div className={styles.sectionHeader}>
+                        <Text as="h4" size="xs">
+                          Authentication
+                        </Text>
+                      </div>
+                      <Select
+                        id={`http-auth-${selectedHttpNode.id}`}
+                        fieldSize="sm"
+                        label="Scheme"
+                        value={selectedHttpNode.config.auth.type}
+                        onChange={(event) => {
+                          const value = event.currentTarget
+                            .value as HttpAuthType;
+                          if (value === selectedHttpNode.config.auth.type) {
+                            return;
+                          }
+                          updateHttpConfig(selectedHttpNode.id, (config) => {
+                            switch (value) {
+                              case "basic":
+                                return {
+                                  ...config,
+                                  auth: {
+                                    type: "basic",
+                                    username: "",
+                                    password: "",
+                                  },
+                                };
+                              case "bearer":
+                                return {
+                                  ...config,
+                                  auth: { type: "bearer", token: "" },
+                                };
+                              default:
+                                return {
+                                  ...config,
+                                  auth: { type: "none" },
+                                };
+                            }
+                          });
+                        }}
+                      >
+                        <option value="none">No auth</option>
+                        <option value="basic">HTTP Basic</option>
+                        <option value="bearer">Bearer token</option>
+                      </Select>
+                      {selectedHttpNode.config.auth.type === "basic" ? (
+                        <div className={styles.parameterGrid}>
+                          <Input
+                            id={`http-auth-user-${selectedHttpNode.id}`}
+                            fieldSize="sm"
+                            label="Username"
+                            value={selectedHttpNode.config.auth.username}
+                            onChange={(event) =>
+                              updateHttpConfig(
+                                selectedHttpNode.id,
+                                (config) => ({
+                                  ...config,
+                                  auth: {
+                                    type: "basic",
+                                    username: event.currentTarget.value,
+                                    password:
+                                      config.auth.type === "basic"
+                                        ? config.auth.password
+                                        : "",
+                                  },
+                                }),
+                              )
+                            }
+                          />
+                          <Input
+                            id={`http-auth-pass-${selectedHttpNode.id}`}
+                            fieldSize="sm"
+                            type="password"
+                            label="Password"
+                            value={selectedHttpNode.config.auth.password}
+                            onChange={(event) =>
+                              updateHttpConfig(
+                                selectedHttpNode.id,
+                                (config) => ({
+                                  ...config,
+                                  auth: {
+                                    type: "basic",
+                                    username:
+                                      config.auth.type === "basic"
+                                        ? config.auth.username
+                                        : "",
+                                    password: event.currentTarget.value,
+                                  },
+                                }),
+                              )
+                            }
+                          />
+                        </div>
+                      ) : null}
+                      {selectedHttpNode.config.auth.type === "bearer" ? (
+                        <Input
+                          id={`http-auth-token-${selectedHttpNode.id}`}
+                          fieldSize="md"
+                          type="password"
+                          label="Bearer token"
+                          value={selectedHttpNode.config.auth.token}
+                          onChange={(event) =>
+                            updateHttpConfig(selectedHttpNode.id, (config) => ({
+                              ...config,
+                              auth: {
+                                type: "bearer",
+                                token: event.currentTarget.value,
+                              },
+                            }))
+                          }
+                        />
+                      ) : null}
+                      <Text as="p" size="xs" className={styles.inspectorHint}>
+                        Secrets are stored locally for previews only. Use
+                        environment variables in production runners.
+                      </Text>
+                    </div>
+
+                    <div className={styles.inspectorSection}>
+                      <div className={styles.sectionHeader}>
+                        <Text as="h4" size="xs">
+                          Input variables
+                        </Text>
+                        <Button
+                          variant="tertiary"
+                          size="sm"
+                          onClick={() => addHttpVariable(selectedHttpNode)}
+                        >
+                          <Icon.PlusCircle size="sm" />
+                          Add variable
+                        </Button>
+                      </div>
+                      {selectedHttpNode.config.inputVariables.length === 0 ? (
+                        <Text as="p" size="xs" className={styles.inspectorHint}>
+                          Variables insert dynamic values using{" "}
+                          <span
+                            className={styles.codeInline}
+                          >{`{{name}}`}</span>
+                          {" placeholders."}
+                        </Text>
+                      ) : (
+                        selectedHttpNode.config.inputVariables.map(
+                          (variable, index) => (
+                            <div key={variable} className={styles.variableRow}>
+                              <Input
+                                id={`http-variable-${selectedHttpNode.id}-${variable}`}
+                                fieldSize="sm"
+                                label={`Variable ${index + 1}`}
+                                value={variable}
+                                onChange={(event) =>
+                                  renameHttpVariable(
+                                    selectedHttpNode,
+                                    index,
+                                    event.currentTarget.value,
+                                  )
+                                }
+                              />
+                              <Button
+                                variant="tertiary"
+                                size="sm"
+                                title="Remove variable"
+                                onClick={() =>
+                                  removeHttpVariable(selectedHttpNode, variable)
+                                }
+                              >
+                                <Icon.MinusCircle size="sm" />
+                              </Button>
+                            </div>
+                          ),
+                        )
+                      )}
+                    </div>
+
+                    <div className={styles.inspectorSection}>
+                      <Text as="h4" size="xs">
+                        Preview inputs
+                      </Text>
+                      {selectedHttpNode.config.inputVariables.length === 0 ? (
+                        <Text as="p" size="xs" className={styles.inspectorHint}>
+                          Add a variable to configure preview inputs.
+                        </Text>
+                      ) : (
+                        selectedHttpNode.config.inputVariables.map(
+                          (variable) => (
+                            <Textarea
+                              key={variable}
+                              id={`http-test-${selectedHttpNode.id}-${variable}`}
+                              fieldSize="md"
+                              label={variable}
+                              value={
+                                selectedHttpNode.config.testInputs[variable] ??
+                                ""
+                              }
+                              onChange={(event) =>
+                                updateHttpTestInput(
+                                  selectedHttpNode,
+                                  variable,
+                                  event.currentTarget.value,
+                                )
+                              }
+                            />
+                          ),
+                        )
+                      )}
+                    </div>
+
+                    <div className={styles.inspectorActions}>
+                      <Button
+                        variant="primary"
+                        size="md"
+                        onClick={() => void runHttpPreview(selectedHttpNode)}
+                        disabled={isHttpPreviewRunning}
+                      >
+                        <Icon.Globe02 size="sm" />
+                        {isHttpPreviewRunning
+                          ? "Sending request..."
+                          : "Send request"}
+                      </Button>
+                    </div>
+                    {httpPreviewError ? (
+                      <Text as="p" size="xs" className={styles.errorMessage}>
+                        {httpPreviewError}
+                      </Text>
+                    ) : null}
+                    {httpLastPreview ? (
+                      <div className={styles.previewPanel}>
+                        <Text
+                          as="h4"
+                          size="xs"
+                          className={styles.previewHeader}
+                        >
+                          Last response
+                          {httpPreviewTimestamp
+                            ? ` · ${httpPreviewTimestamp}`
+                            : ""}
+                        </Text>
+                        {httpLastPreview.response ? (
+                          <>
+                            <Text
+                              as="p"
+                              size="xs"
+                              className={styles.previewMeta}
+                            >
+                              Status {httpLastPreview.response.status}
+                              {" · "}
+                              {httpLastPreview.response.ok ? "OK" : "Error"}
+                              {" · "}
+                              {Math.round(httpLastPreview.response.durationMs)}
+                              ms
+                            </Text>
+                            {formattedHttpBody ? (
+                              <pre className={styles.previewOutput}>
+                                {formattedHttpBody}
+                              </pre>
+                            ) : null}
+                            {formattedHttpHeaders ? (
+                              <details className={styles.previewDetails}>
+                                <summary>Headers</summary>
+                                <pre className={styles.previewOutput}>
+                                  {formattedHttpHeaders}
+                                </pre>
+                              </details>
+                            ) : null}
+                          </>
+                        ) : null}
+                        {httpLastPreview.error ? (
+                          <Text
+                            as="p"
+                            size="xs"
+                            className={styles.errorMessage}
+                          >
+                            {httpLastPreview.error}
+                          </Text>
+                        ) : null}
+                        <Text as="p" size="xs" className={styles.previewMeta}>
+                          HTTP calls {httpLastPreview.usage.httpCalls}
+                          {" · "}
+                          Runtime {Math.round(httpLastPreview.usage.runtimeMs)}
+                          ms
+                        </Text>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className={styles.inspectorDetails}>
+                    <Text as="h3" size="sm">
+                      {selectedNode.title}
+                    </Text>
+                    <Text as="p" size="xs" className={styles.inspectorHint}>
+                      {selectedNode.kind} configuration is coming soon.
+                    </Text>
+                  </div>
+                )
               ) : (
                 <div className={styles.inspectorEmpty}>
                   <Icon.Edit03 size="lg" />
