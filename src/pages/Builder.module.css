@@ -120,37 +120,67 @@
 .canvasControls {
   display: flex;
   gap: 0.5rem;
+  align-items: center;
+}
+
+.canvasScaleLabel {
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  color: rgba(214, 224, 255, 0.75);
+  min-width: 3.5rem;
+  text-align: center;
 }
 
 .canvas {
   flex: 1;
   position: relative;
-  background-image:
-    linear-gradient(rgba(155, 92, 255, 0.12) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(155, 92, 255, 0.12) 1px, transparent 1px);
-  background-size: 48px 48px;
-  backdrop-filter: blur(12px);
   display: flex;
   padding: 1.5rem;
+  overflow: hidden;
+}
+
+.canvasSurface {
+  flex: 1;
   position: relative;
+  overflow: hidden;
+  border-radius: 1.25rem;
+  box-shadow: inset 0 0 0 1px rgba(155, 92, 255, 0.14);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  background-color: rgba(8, 0, 28, 0.65);
+}
+
+.canvasSurfacePanning {
+  cursor: grabbing;
+}
+
+.canvasTransform {
+  position: absolute;
+  inset: 0;
 }
 
 .canvasInner {
-  position: relative;
-  flex: 1;
-  width: 100%;
-  min-height: 560px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
 }
 
 .canvasEmpty {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translate(-50%, -50%);
+  width: 320px;
+  max-width: 80vw;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
   align-items: center;
   text-align: center;
-  max-width: 320px;
   color: var(--lumio-text-muted);
-  margin: auto;
+  pointer-events: none;
 }
 
 .inspectorEmpty {
