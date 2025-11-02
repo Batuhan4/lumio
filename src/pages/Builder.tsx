@@ -172,6 +172,51 @@ const getNodeEdgePoint = (
   };
 };
 
+const findDisconnectedNodes = (
+  nodes: WorkflowNode[],
+  connections: WorkflowConnection[],
+) => {
+  if (nodes.length <= 1) {
+    return [] as WorkflowNode[];
+  }
+
+  const adjacency = new Map<string, Set<string>>();
+  nodes.forEach((node) => adjacency.set(node.id, new Set()));
+  connections.forEach((connection) => {
+    const fromNeighbors = adjacency.get(connection.from);
+    const toNeighbors = adjacency.get(connection.to);
+    if (!fromNeighbors || !toNeighbors) {
+      return;
+    }
+    fromNeighbors.add(connection.to);
+    toNeighbors.add(connection.from);
+  });
+
+  const startNode =
+    nodes.find((node) => (adjacency.get(node.id)?.size ?? 0) > 0) ?? nodes[0];
+  if (!startNode) {
+    return [] as WorkflowNode[];
+  }
+
+  const stack = [startNode.id];
+  const visited = new Set<string>();
+  while (stack.length > 0) {
+    const currentId = stack.pop();
+    if (!currentId || visited.has(currentId)) {
+      continue;
+    }
+    visited.add(currentId);
+    const neighbors = adjacency.get(currentId);
+    neighbors?.forEach((neighborId) => {
+      if (!visited.has(neighborId)) {
+        stack.push(neighborId);
+      }
+    });
+  }
+
+  return nodes.filter((node) => !visited.has(node.id));
+};
+
 const safeStringify = (value: unknown) => {
   try {
     return JSON.stringify(value, null, 2);
@@ -1348,6 +1393,27 @@ const Builder = () => {
 
       if (workflowNodes.length === 0) {
         setWorkflowRunError("Add at least one node to run the workflow.");
+        setIsWorkflowRunning(false);
+        return;
+      }
+
+      const disconnectedNodes = findDisconnectedNodes(
+        workflowNodes,
+        workflowConnections,
+      );
+      if (disconnectedNodes.length > 0) {
+        const formatNodeLabel = (node: WorkflowNode) =>
+          (node.title?.trim() ?? "") || node.kind;
+        const labels = disconnectedNodes.map(formatNodeLabel);
+        const summaryLabel =
+          labels.length <= 3
+            ? labels.join(", ")
+            : `${labels.slice(0, 3).join(", ")} + ${labels.length - 3} more`;
+        const message =
+          disconnectedNodes.length === 1
+            ? `Connect "${labels[0]}" to the rest of the flow before running.`
+            : `Connect all actions before running. Disconnected nodes: ${summaryLabel}.`;
+        setWorkflowRunError(message);
         setIsWorkflowRunning(false);
         return;
       }
