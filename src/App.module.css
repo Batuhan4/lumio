@@ -69,3 +69,13 @@
   align-items: center;
   gap: 1rem;
 }
+
+.pageContent {
+  margin-top: 2.5rem;
+}
+
+@media (max-width: 900px) {
+  .pageContent {
+    margin-top: 1.75rem;
+  }
+}

@@ -48,7 +48,9 @@ const AppLayout: React.FC = () => (
         </div>
       </Layout.Inset>
     </header>
-    <Outlet />
+    <div className={styles.pageContent}>
+      <Outlet />
+    </div>
     <Layout.Footer>
       <span>
         © {new Date().getFullYear()} Lumio. Licensed under the{" "}
