@@ -2,6 +2,7 @@ import storage from "./storage";
 import {
   DEFAULT_GEMINI_CONFIG,
   DEFAULT_HTTP_CONFIG,
+  DEFAULT_STELLAR_ACCOUNT_CONFIG,
   EMPTY_WORKFLOW_STATE,
   type GeminiNodeConfig,
   type HttpAuthConfig,
@@ -9,6 +10,9 @@ import {
   type HttpMethod,
   type HttpNodeConfig,
   type HttpPreview,
+  type StellarAccountNodeConfig,
+  type StellarAccountPreview,
+  type StellarNetwork,
   type WorkflowConnection,
   type WorkflowDefinition,
   type WorkflowDraftState,
@@ -28,6 +32,13 @@ const WORKFLOW_NODE_KINDS: WorkflowNodeKind[] = [
   "ipfs",
 ];
 
+const STELLAR_NETWORKS: StellarNetwork[] = [
+  "PUBLIC",
+  "TESTNET",
+  "FUTURENET",
+  "LOCAL",
+];
+
 const HTTP_METHODS: HttpMethod[] = [
   "GET",
   "POST",
@@ -45,6 +56,10 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 const isWorkflowNodeKind = (value: unknown): value is WorkflowNodeKind =>
   typeof value === "string" &&
   WORKFLOW_NODE_KINDS.includes(value as WorkflowNodeKind);
+
+const isStellarNetwork = (value: unknown): value is StellarNetwork =>
+  typeof value === "string" &&
+  STELLAR_NETWORKS.includes(value as StellarNetwork);
 
 const isHttpMethod = (value: unknown): value is HttpMethod =>
   typeof value === "string" && HTTP_METHODS.includes(value as HttpMethod);
@@ -223,6 +238,84 @@ const sanitizeHttpConfig = (raw: unknown): HttpNodeConfig => {
     inputVariables,
     testInputs,
     lastPreview: sanitizeHttpPreview(raw.lastPreview),
+  };
+};
+
+const sanitizeStellarAccountPreview = (
+  raw: unknown,
+): StellarAccountPreview | undefined => {
+  if (!isObject(raw)) {
+    return undefined;
+  }
+
+  const network = isStellarNetwork(raw.network)
+    ? raw.network
+    : DEFAULT_STELLAR_ACCOUNT_CONFIG.network;
+  const horizonUrl =
+    typeof raw.horizonUrl === "string"
+      ? raw.horizonUrl
+      : DEFAULT_STELLAR_ACCOUNT_CONFIG.horizonUrl;
+
+  const preview: StellarAccountPreview = {
+    executedAt:
+      typeof raw.executedAt === "string"
+        ? raw.executedAt
+        : new Date().toISOString(),
+    accountId:
+      typeof raw.accountId === "string"
+        ? raw.accountId
+        : DEFAULT_STELLAR_ACCOUNT_CONFIG.accountId,
+    network,
+    horizonUrl,
+  };
+
+  if ("balances" in raw) {
+    preview.balances = raw.balances;
+  }
+  if ("payments" in raw) {
+    preview.payments = raw.payments;
+  }
+  if (typeof raw.error === "string" && raw.error.trim().length > 0) {
+    preview.error = raw.error;
+  }
+
+  return preview;
+};
+
+const sanitizeStellarAccountConfig = (
+  raw: unknown,
+): StellarAccountNodeConfig => {
+  if (!isObject(raw)) {
+    return { ...DEFAULT_STELLAR_ACCOUNT_CONFIG };
+  }
+
+  const accountId =
+    typeof raw.accountId === "string"
+      ? raw.accountId
+      : DEFAULT_STELLAR_ACCOUNT_CONFIG.accountId;
+  const network = isStellarNetwork(raw.network)
+    ? raw.network
+    : DEFAULT_STELLAR_ACCOUNT_CONFIG.network;
+  const horizonUrl =
+    typeof raw.horizonUrl === "string"
+      ? raw.horizonUrl
+      : DEFAULT_STELLAR_ACCOUNT_CONFIG.horizonUrl;
+  const paymentsLimit =
+    typeof raw.paymentsLimit === "number" && Number.isFinite(raw.paymentsLimit)
+      ? Math.max(1, Math.round(raw.paymentsLimit))
+      : DEFAULT_STELLAR_ACCOUNT_CONFIG.paymentsLimit;
+  const includeFailed =
+    typeof raw.includeFailed === "boolean"
+      ? raw.includeFailed
+      : DEFAULT_STELLAR_ACCOUNT_CONFIG.includeFailed;
+
+  return {
+    accountId,
+    network,
+    horizonUrl,
+    paymentsLimit,
+    includeFailed,
+    lastPreview: sanitizeStellarAccountPreview(raw.lastPreview),
   };
 };
 
@@ -405,6 +498,18 @@ const sanitizeWorkflowNode = (raw: unknown): WorkflowNode | null => {
     };
   }
 
+  if (raw.kind === "stellar-account") {
+    const config = sanitizeStellarAccountConfig(raw.config);
+    return {
+      id,
+      kind: "stellar-account",
+      title,
+      description,
+      position,
+      config,
+    };
+  }
+
   return {
     id,
     kind: raw.kind,
@@ -511,7 +616,7 @@ const NODE_CONFIG_FACTORIES = {
     testInputs: { ...DEFAULT_HTTP_CONFIG.testInputs },
   }),
   gemini: () => ({ ...DEFAULT_GEMINI_CONFIG }),
-  "stellar-account": () => ({}) as Record<string, never>,
+  "stellar-account": () => ({ ...DEFAULT_STELLAR_ACCOUNT_CONFIG }),
   classifier: () => ({}) as Record<string, never>,
   conditional: () => ({}) as Record<string, never>,
   ipfs: () => ({}) as Record<string, never>,

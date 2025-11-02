@@ -27,17 +27,24 @@ import { executeHttpRequest } from "../services/http";
 import type { HttpRequestExecution } from "../services/http";
 import { interpolateTemplate } from "../util/templates";
 import { useGeminiApiKey } from "../hooks/useGeminiApiKey";
-import { DEFAULT_HTTP_CONFIG } from "../types/workflows";
+import {
+  DEFAULT_HTTP_CONFIG,
+  DEFAULT_STELLAR_ACCOUNT_CONFIG,
+} from "../types/workflows";
 import type {
   GeminiNodeConfig,
   HttpKeyValue,
   HttpMethod,
   HttpNodeConfig,
+  StellarAccountNodeConfig,
+  StellarNetwork,
+  WorkflowConnection,
   WorkflowDefinition,
   WorkflowDraftState,
   WorkflowNode,
   WorkflowNodeKind,
 } from "../types/workflows";
+import { fetchStellarAccount } from "../services/stellarAccount";
 import styles from "./Builder.module.css";
 
 const GRID_SIZE = 48;
@@ -48,6 +55,7 @@ const BASE_CANVAS_HEIGHT = GRID_SIZE * 1200;
 const MIN_CANVAS_SCALE = 0.01;
 const MAX_CANVAS_SCALE = 64;
 const CANVAS_ZOOM_FACTOR = 1.2;
+const CONNECTION_PIPE_HEIGHT = 12;
 const GEMINI_MODEL_OPTIONS = [
   "gemini-2.0-flash",
   "gemini-2.0-pro",
@@ -80,6 +88,16 @@ const HTTP_BODY_MIME_TYPES: Array<{
   { value: "text/plain", label: "Plain text" },
 ];
 
+const STELLAR_NETWORK_OPTIONS: Array<{
+  value: StellarNetwork;
+  label: string;
+}> = [
+  { value: "PUBLIC", label: "Public" },
+  { value: "TESTNET", label: "Testnet" },
+  { value: "FUTURENET", label: "Futurenet" },
+  { value: "LOCAL", label: "Local" },
+];
+
 type HttpAuthType = HttpNodeConfig["auth"]["type"];
 
 const createHttpKeyValue = (): HttpKeyValue => ({
@@ -92,7 +110,13 @@ const createHttpKeyValue = (): HttpKeyValue => ({
   enabled: true,
 });
 
+const createConnectionId = () =>
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `conn-${Date.now()}-${Math.round(Math.random() * 1_000_000)}`;
+
 const EMPTY_NODES: WorkflowNode[] = [];
+const EMPTY_CONNECTIONS: WorkflowConnection[] = [];
 
 type PaletteItemDefinition = {
   kind: WorkflowNodeKind;
@@ -109,10 +133,92 @@ type CanvasMetrics = {
   panY: number;
 };
 
+type WorkflowRunStepSummary = {
+  nodeId: string;
+  title: string;
+  status: "success" | "error" | "skipped";
+  detail?: string;
+};
+
 const snapPosition = ({ x, y }: { x: number; y: number }) => ({
   x: Math.round(x / GRID_SIZE) * GRID_SIZE,
   y: Math.round(y / GRID_SIZE) * GRID_SIZE,
 });
+
+const safeStringify = (value: unknown) => {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+};
+
+const sortWorkflowNodes = (
+  nodes: WorkflowNode[],
+  connections: WorkflowConnection[],
+): { success: true; order: WorkflowNode[] } | { success: false } => {
+  const nodeMap = new Map<string, WorkflowNode>();
+  nodes.forEach((node) => nodeMap.set(node.id, node));
+
+  const inDegree = new Map<string, number>();
+  nodeMap.forEach((_, id) => inDegree.set(id, 0));
+
+  const adjacency = new Map<string, string[]>();
+
+  connections.forEach((connection) => {
+    const fromExists = nodeMap.has(connection.from);
+    const toExists = nodeMap.has(connection.to);
+    if (!fromExists || !toExists) {
+      return;
+    }
+    const list = adjacency.get(connection.from) ?? [];
+    list.push(connection.to);
+    adjacency.set(connection.from, list);
+    inDegree.set(connection.to, (inDegree.get(connection.to) ?? 0) + 1);
+  });
+
+  const queue: WorkflowNode[] = nodes
+    .filter((node) => (inDegree.get(node.id) ?? 0) === 0)
+    .sort((a, b) => {
+      if (a.position.x !== b.position.x) {
+        return a.position.x - b.position.x;
+      }
+      return a.position.y - b.position.y;
+    });
+
+  const order: WorkflowNode[] = [];
+  const queueCopy = [...queue];
+
+  while (queueCopy.length > 0) {
+    const current = queueCopy.shift();
+    if (!current) break;
+    order.push(current);
+
+    const outgoing = adjacency.get(current.id) ?? [];
+    outgoing.forEach((targetId) => {
+      const nextDegree = (inDegree.get(targetId) ?? 0) - 1;
+      inDegree.set(targetId, nextDegree);
+      if (nextDegree === 0) {
+        const targetNode = nodeMap.get(targetId);
+        if (targetNode) {
+          queueCopy.push(targetNode);
+          queueCopy.sort((a, b) => {
+            if (a.position.x !== b.position.x) {
+              return a.position.x - b.position.x;
+            }
+            return a.position.y - b.position.y;
+          });
+        }
+      }
+    });
+  }
+
+  if (order.length !== nodeMap.size) {
+    return { success: false };
+  }
+
+  return { success: true, order };
+};
 
 const PaletteItem: React.FC<{
   item: PaletteItemDefinition;
@@ -138,13 +244,34 @@ const PaletteItem: React.FC<{
 const CanvasNode: React.FC<{
   node: WorkflowNode;
   onSelect: (id: string) => void;
+  onActivate: (id: string) => void;
   isSelected: boolean;
   onDrag: (id: string, position: { x: number; y: number }) => void;
   getCanvasMetrics: () => CanvasMetrics | null;
-}> = ({ node, onSelect, isSelected, onDrag, getCanvasMetrics }) => {
+  onStartConnection: (id: string) => void;
+  onCompleteConnection: (id: string) => void;
+  isConnectionSource: boolean;
+  canAcceptConnection: boolean;
+}> = ({
+  node,
+  onSelect,
+  onActivate,
+  isSelected,
+  onDrag,
+  getCanvasMetrics,
+  onStartConnection,
+  onCompleteConnection,
+  isConnectionSource,
+  canAcceptConnection,
+}) => {
+  const didDragRef = useRef(false);
+
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     const metrics = getCanvasMetrics();
     if (!metrics) return;
+    if (event.button !== 0 && event.pointerType !== "touch") {
+      return;
+    }
 
     event.preventDefault();
     event.stopPropagation();
@@ -155,8 +282,14 @@ const CanvasNode: React.FC<{
     const pointerCanvasY = (event.clientY - rect.top - panY) / scale;
     const originX = pointerCanvasX - node.position.x;
     const originY = pointerCanvasY - node.position.y;
+    const startPosition = { x: node.position.x, y: node.position.y };
+
+    didDragRef.current = false;
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) {
+        return;
+      }
       const currentMetrics = getCanvasMetrics();
       if (!currentMetrics) return;
       const {
@@ -172,10 +305,22 @@ const CanvasNode: React.FC<{
         (moveEvent.clientY - moveRect.top - currentPanY) / moveScale - originY;
       const nextX = pointerX;
       const nextY = pointerY;
+
+      if (
+        !didDragRef.current &&
+        (Math.abs(nextX - startPosition.x) > 2 ||
+          Math.abs(nextY - startPosition.y) > 2)
+      ) {
+        didDragRef.current = true;
+      }
+
       onDrag(node.id, { x: nextX, y: nextY });
     };
 
-    const handlePointerUp = () => {
+    const handlePointerUp = (upEvent: PointerEvent) => {
+      if (upEvent.pointerId !== pointerId) {
+        return;
+      }
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerUp);
@@ -183,6 +328,9 @@ const CanvasNode: React.FC<{
         startTarget.releasePointerCapture(pointerId);
       } catch {
         /* noop */
+      }
+      if (!didDragRef.current) {
+        onActivate(node.id);
       }
     };
 
@@ -198,19 +346,24 @@ const CanvasNode: React.FC<{
     <div
       role="button"
       tabIndex={0}
-      className={[styles.node, isSelected ? styles.nodeSelected : ""]
-        .join(" ")
-        .trim()}
+      className={[
+        styles.node,
+        isSelected ? styles.nodeSelected : "",
+        isConnectionSource ? styles.nodeAsSource : "",
+        canAcceptConnection ? styles.nodeReadyTarget : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
       style={{
         left: node.position.x,
         top: node.position.y,
         width: NODE_WIDTH,
       }}
-      onClick={() => onSelect(node.id)}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           onSelect(node.id);
+          onActivate(node.id);
         }
       }}
       onPointerDown={handlePointerDown}
@@ -225,8 +378,31 @@ const CanvasNode: React.FC<{
         </Text>
       </div>
       <div className={styles.nodePorts}>
-        <span className={styles.nodePort} aria-hidden />
-        <span className={styles.nodePort} aria-hidden />
+        <button
+          type="button"
+          className={styles.nodePort}
+          title="Connect as target"
+          disabled={!canAcceptConnection}
+          onClick={(event) => {
+            event.stopPropagation();
+            if (canAcceptConnection) {
+              onCompleteConnection(node.id);
+            }
+          }}
+        />
+        <button
+          type="button"
+          className={styles.nodePort}
+          title={
+            isConnectionSource
+              ? "Cancel connection"
+              : "Connect to another action"
+          }
+          onClick={(event) => {
+            event.stopPropagation();
+            onStartConnection(node.id);
+          }}
+        />
       </div>
     </div>
   );
@@ -310,6 +486,7 @@ const Builder = () => {
       ? workflowState.workflows[activeWorkflowId]
       : null;
   const nodes = activeWorkflow?.nodes ?? EMPTY_NODES;
+  const connections = activeWorkflow?.connections ?? EMPTY_CONNECTIONS;
   const {
     apiKey: geminiApiKey,
     persistedKey: storedGeminiKey,
@@ -450,6 +627,170 @@ const Builder = () => {
       });
     },
     [updateHttpNode],
+  );
+
+  const updateStellarNode = useCallback(
+    (
+      nodeId: string,
+      mutator: (
+        node: WorkflowNode<"stellar-account">,
+      ) => WorkflowNode<"stellar-account"> | null | undefined,
+    ) => {
+      updateActiveWorkflow((workflow) => {
+        const index = workflow.nodes.findIndex((node) => node.id === nodeId);
+        if (index === -1) {
+          return workflow;
+        }
+        const currentNode = workflow.nodes[index];
+        if (currentNode.kind !== "stellar-account") {
+          return workflow;
+        }
+        const updated = mutator(currentNode as WorkflowNode<"stellar-account">);
+        if (!updated || updated === currentNode) {
+          return workflow;
+        }
+        const nextNodes = [...workflow.nodes];
+        nextNodes[index] = updated;
+        return {
+          ...workflow,
+          nodes: nextNodes,
+        };
+      });
+    },
+    [updateActiveWorkflow],
+  );
+
+  const updateStellarConfig = useCallback(
+    (
+      nodeId: string,
+      mutator: (config: StellarAccountNodeConfig) => StellarAccountNodeConfig,
+      options?: { resetPreview?: boolean },
+    ) => {
+      updateStellarNode(nodeId, (node) => {
+        const nextConfig = mutator(node.config);
+        const shouldReset = options?.resetPreview !== false;
+        const finalConfig = shouldReset
+          ? { ...nextConfig, lastPreview: undefined }
+          : nextConfig;
+        if (finalConfig === node.config) {
+          return node;
+        }
+        return {
+          ...node,
+          config: finalConfig,
+        };
+      });
+    },
+    [updateStellarNode],
+  );
+
+  const addConnection = useCallback(
+    (fromId: string, toId: string) => {
+      if (!fromId || !toId || fromId === toId) {
+        return;
+      }
+
+      updateActiveWorkflow((workflow) => {
+        const hasFrom = workflow.nodes.some((node) => node.id === fromId);
+        const hasTo = workflow.nodes.some((node) => node.id === toId);
+        if (!hasFrom || !hasTo) {
+          return workflow;
+        }
+
+        if (
+          workflow.connections.some(
+            (connection) =>
+              connection.from === fromId && connection.to === toId,
+          )
+        ) {
+          return workflow;
+        }
+
+        const connection = {
+          id: createConnectionId(),
+          from: fromId,
+          to: toId,
+        };
+
+        return {
+          ...workflow,
+          connections: [...workflow.connections, connection],
+        };
+      });
+    },
+    [updateActiveWorkflow],
+  );
+
+  const removeConnection = useCallback(
+    (connectionId: string) => {
+      updateActiveWorkflow((workflow) => {
+        const nextConnections = workflow.connections.filter(
+          (connection) => connection.id !== connectionId,
+        );
+        if (nextConnections.length === workflow.connections.length) {
+          return workflow;
+        }
+        return {
+          ...workflow,
+          connections: nextConnections,
+        };
+      });
+    },
+    [updateActiveWorkflow],
+  );
+
+  const cancelPendingConnection = useCallback(() => {
+    pendingConnectionSourceRef.current = null;
+    setPendingConnectionSourceId(null);
+  }, []);
+
+  const handleStartConnection = useCallback(
+    (nodeId: string) => {
+      if (pendingConnectionSourceRef.current === nodeId) {
+        cancelPendingConnection();
+        return;
+      }
+      pendingConnectionSourceRef.current = nodeId;
+      setPendingConnectionSourceId(nodeId);
+    },
+    [cancelPendingConnection],
+  );
+
+  const handleCompleteConnection = useCallback(
+    (targetId: string) => {
+      const sourceId = pendingConnectionSourceRef.current;
+      if (sourceId && sourceId !== targetId) {
+        addConnection(sourceId, targetId);
+      }
+      cancelPendingConnection();
+    },
+    [addConnection, cancelPendingConnection],
+  );
+
+  const handleNodeActivate = useCallback(
+    (nodeId: string) => {
+      setSelectedNodeId(nodeId);
+      const sourceId = pendingConnectionSourceRef.current;
+      if (!sourceId) {
+        pendingConnectionSourceRef.current = nodeId;
+        setPendingConnectionSourceId(nodeId);
+        return;
+      }
+      if (sourceId === nodeId) {
+        cancelPendingConnection();
+        return;
+      }
+
+      const alreadyConnected = connections.some(
+        (connection) =>
+          connection.from === sourceId && connection.to === nodeId,
+      );
+      if (!alreadyConnected) {
+        addConnection(sourceId, nodeId);
+      }
+      cancelPendingConnection();
+    },
+    [addConnection, cancelPendingConnection, connections],
   );
 
   const addGeminiVariable = useCallback(
@@ -852,6 +1193,491 @@ const Builder = () => {
     [updateHttpConfig],
   );
 
+  const runStellarPreview = useCallback(
+    async (node: WorkflowNode<"stellar-account">) => {
+      setIsStellarPreviewRunning(true);
+      setStellarPreviewError(null);
+
+      try {
+        const result = await fetchStellarAccount({
+          accountId: node.config.accountId,
+          network: node.config.network,
+          horizonUrl: node.config.horizonUrl,
+          paymentsLimit: node.config.paymentsLimit,
+          includeFailed: node.config.includeFailed,
+        });
+
+        const executedAt = new Date().toISOString();
+
+        if (!result.ok) {
+          setStellarPreviewError(result.error);
+          updateStellarConfig(
+            node.id,
+            (config) => ({
+              ...config,
+              horizonUrl: result.horizonUrl ?? config.horizonUrl,
+              lastPreview: {
+                executedAt,
+                accountId: node.config.accountId,
+                network: node.config.network,
+                horizonUrl: result.horizonUrl,
+                error: result.error,
+              },
+            }),
+            { resetPreview: false },
+          );
+          return;
+        }
+
+        updateStellarConfig(
+          node.id,
+          (config) => ({
+            ...config,
+            accountId: result.accountId,
+            horizonUrl: result.horizonUrl,
+            lastPreview: {
+              executedAt,
+              accountId: result.accountId,
+              network: result.network,
+              horizonUrl: result.horizonUrl,
+              balances: result.balances,
+              payments: result.payments,
+            },
+          }),
+          { resetPreview: false },
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to query Horizon.";
+        setStellarPreviewError(message);
+      } finally {
+        setIsStellarPreviewRunning(false);
+      }
+    },
+    [updateStellarConfig],
+  );
+
+  const [isPreviewRunning, setIsPreviewRunning] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [apiKeyDraft, setApiKeyDraft] = useState(storedGeminiKey);
+  const [isHttpPreviewRunning, setIsHttpPreviewRunning] = useState(false);
+  const [httpPreviewError, setHttpPreviewError] = useState<string | null>(null);
+  const [isStellarPreviewRunning, setIsStellarPreviewRunning] = useState(false);
+  const [stellarPreviewError, setStellarPreviewError] = useState<string | null>(
+    null,
+  );
+  const [isWorkflowRunning, setIsWorkflowRunning] = useState(false);
+  const [workflowRunError, setWorkflowRunError] = useState<string | null>(null);
+  const [workflowRunSummary, setWorkflowRunSummary] = useState<
+    WorkflowRunStepSummary[]
+  >([]);
+  const [workflowRunLabel, setWorkflowRunLabel] = useState<
+    "preview" | "run" | null
+  >(null);
+
+  const workflowRunStats = useMemo(() => {
+    if (workflowRunSummary.length === 0) {
+      return null;
+    }
+    const success = workflowRunSummary.filter(
+      (step) => step.status === "success",
+    ).length;
+    const skipped = workflowRunSummary.filter(
+      (step) => step.status === "skipped",
+    ).length;
+    const failed = workflowRunSummary.filter(
+      (step) => step.status === "error",
+    ).length;
+    return { success, skipped, failed };
+  }, [workflowRunSummary]);
+
+  const dismissRunSummary = useCallback(() => {
+    setWorkflowRunError(null);
+    setWorkflowRunSummary([]);
+    setWorkflowRunLabel(null);
+  }, []);
+
+  const runWorkflow = useCallback(
+    async (label: "preview" | "run") => {
+      if (!activeWorkflow) {
+        setWorkflowRunLabel(label);
+        setWorkflowRunError("Create a workflow before running it.");
+        setWorkflowRunSummary([]);
+        return;
+      }
+
+      if (isWorkflowRunning) {
+        return;
+      }
+
+      cancelPendingConnection();
+      setWorkflowRunLabel(label);
+      setWorkflowRunError(null);
+      setWorkflowRunSummary([]);
+      setIsWorkflowRunning(true);
+
+      const { nodes: workflowNodes, connections: workflowConnections } =
+        activeWorkflow;
+
+      if (workflowNodes.length === 0) {
+        setWorkflowRunError("Add at least one node to run the workflow.");
+        setIsWorkflowRunning(false);
+        return;
+      }
+
+      const sorted = sortWorkflowNodes(workflowNodes, workflowConnections);
+      if (!sorted.success) {
+        setWorkflowRunError(
+          "Unable to compute execution order. Check for circular connections.",
+        );
+        setIsWorkflowRunning(false);
+        return;
+      }
+
+      try {
+        const order = sorted.order;
+        const incomingByNode = new Map<string, WorkflowConnection[]>();
+        workflowConnections.forEach((connection) => {
+          const list = incomingByNode.get(connection.to) ?? [];
+          list.push(connection);
+          incomingByNode.set(connection.to, list);
+        });
+
+        const outputs = new Map<string, Record<string, string>>();
+        const summary: WorkflowRunStepSummary[] = [];
+        let encounteredError = false;
+
+        const collectUpstream = (nodeId: string) => {
+          const aggregate: Record<string, string> = {};
+          const incoming = incomingByNode.get(nodeId) ?? [];
+          incoming.forEach((connection) => {
+            const upstream = outputs.get(connection.from);
+            if (upstream) {
+              Object.assign(aggregate, upstream);
+            }
+          });
+          return aggregate;
+        };
+
+        for (const node of order) {
+          if (encounteredError) {
+            break;
+          }
+
+          if (node.kind === "stellar-account") {
+            const config = node.config as StellarAccountNodeConfig;
+            try {
+              const result = await fetchStellarAccount({
+                accountId: config.accountId,
+                network: config.network,
+                horizonUrl: config.horizonUrl,
+                paymentsLimit: config.paymentsLimit,
+                includeFailed: config.includeFailed,
+              });
+
+              if (!result.ok) {
+                encounteredError = true;
+                summary.push({
+                  nodeId: node.id,
+                  title: node.title,
+                  status: "error",
+                  detail: result.error,
+                });
+                setWorkflowRunError(result.error);
+                break;
+              }
+
+              const executedAt = new Date().toISOString();
+              updateStellarConfig(
+                node.id,
+                (existing) => ({
+                  ...existing,
+                  accountId: result.accountId,
+                  horizonUrl: result.horizonUrl,
+                  lastPreview: {
+                    executedAt,
+                    accountId: result.accountId,
+                    network: result.network,
+                    horizonUrl: result.horizonUrl,
+                    balances: result.balances,
+                    payments: result.payments,
+                  },
+                }),
+                { resetPreview: false },
+              );
+
+              const aggregatedPayload = {
+                accountId: result.accountId,
+                network: result.network,
+                horizonUrl: result.horizonUrl,
+                balances: result.balances,
+                payments: result.payments,
+              };
+              const walletJson = safeStringify(aggregatedPayload);
+              const balancesJson = safeStringify(result.balances);
+              const paymentsJson = safeStringify(result.payments);
+
+              outputs.set(node.id, {
+                wallet_json: walletJson,
+                [`${node.id}.wallet_json`]: walletJson,
+                [`${node.id}.balances_json`]: balancesJson,
+                [`${node.id}.payments_json`]: paymentsJson,
+              });
+
+              const paymentCount = Array.isArray(result.payments)
+                ? result.payments.length
+                : 0;
+              summary.push({
+                nodeId: node.id,
+                title: node.title,
+                status: "success",
+                detail: `Fetched ${paymentCount} recent payments`,
+              });
+            } catch (error) {
+              const message =
+                error instanceof Error
+                  ? error.message
+                  : "Failed to reach Horizon.";
+              encounteredError = true;
+              summary.push({
+                nodeId: node.id,
+                title: node.title,
+                status: "error",
+                detail: message,
+              });
+              setWorkflowRunError(message);
+              break;
+            }
+            continue;
+          }
+
+          if (node.kind === "http") {
+            const config = node.config as HttpNodeConfig;
+            const normalizedConfig: HttpNodeConfig = {
+              ...DEFAULT_HTTP_CONFIG,
+              ...(config ?? {}),
+              queryParams: Array.isArray(config?.queryParams)
+                ? config.queryParams
+                : [],
+              headers: Array.isArray(config?.headers) ? config.headers : [],
+              inputVariables: Array.isArray(config?.inputVariables)
+                ? config.inputVariables
+                : [],
+              testInputs:
+                config?.testInputs && typeof config.testInputs === "object"
+                  ? config.testInputs
+                  : {},
+            };
+
+            const variables = {
+              ...normalizedConfig.testInputs,
+              ...collectUpstream(node.id),
+            };
+
+            try {
+              const result = await executeHttpRequest({
+                method: normalizedConfig.method,
+                url: normalizedConfig.url,
+                queryParams: normalizedConfig.queryParams,
+                headers: normalizedConfig.headers,
+                bodyTemplate: normalizedConfig.bodyTemplate,
+                bodyMimeType: normalizedConfig.bodyMimeType,
+                auth: normalizedConfig.auth,
+                timeoutMs: normalizedConfig.timeoutMs,
+                variables,
+              });
+
+              if (result.error && result.error.type === "validation") {
+                encounteredError = true;
+                summary.push({
+                  nodeId: node.id,
+                  title: node.title,
+                  status: "error",
+                  detail: result.error.message,
+                });
+                setWorkflowRunError(result.error.message);
+                break;
+              }
+
+              updateHttpConfig(
+                node.id,
+                (existing) => ({
+                  ...existing,
+                  lastPreview: {
+                    executedAt: new Date().toISOString(),
+                    request: {
+                      method: normalizedConfig.method,
+                      url: result.requestUrl,
+                    },
+                    response: result.response,
+                    error: result.error?.message,
+                    usage: {
+                      httpCalls: result.response ? 1 : 0,
+                      runtimeMs: result.response?.durationMs ?? 0,
+                    },
+                  },
+                }),
+                { resetPreview: false },
+              );
+
+              const payload: Record<string, string> = {};
+              if (result.response) {
+                payload[`${node.id}.status`] = String(result.response.status);
+                if (result.response.bodyText) {
+                  payload[`${node.id}.body_text`] = result.response.bodyText;
+                }
+                if (result.response.bodyJson !== undefined) {
+                  payload[`${node.id}.body_json`] = safeStringify(
+                    result.response.bodyJson,
+                  );
+                }
+              }
+              outputs.set(node.id, payload);
+
+              summary.push({
+                nodeId: node.id,
+                title: node.title,
+                status: result.error ? "error" : "success",
+                detail: result.error?.message ?? "Request executed",
+              });
+
+              if (result.error && !encounteredError) {
+                encounteredError = true;
+                setWorkflowRunError(result.error.message);
+                break;
+              }
+            } catch (error) {
+              const message =
+                error instanceof Error ? error.message : "HTTP request failed.";
+              encounteredError = true;
+              summary.push({
+                nodeId: node.id,
+                title: node.title,
+                status: "error",
+                detail: message,
+              });
+              setWorkflowRunError(message);
+              break;
+            }
+            continue;
+          }
+
+          if (node.kind === "gemini") {
+            if (!geminiApiKey) {
+              const message =
+                "Add a Gemini API key before running Gemini nodes.";
+              encounteredError = true;
+              summary.push({
+                nodeId: node.id,
+                title: node.title,
+                status: "error",
+                detail: message,
+              });
+              setWorkflowRunError(message);
+              break;
+            }
+
+            const config = node.config as GeminiNodeConfig;
+            const upstream = collectUpstream(node.id);
+            const variableValues = { ...config.testInputs, ...upstream };
+            config.inputVariables.forEach((variable) => {
+              if (!(variable in variableValues)) {
+                variableValues[variable] = config.testInputs[variable] ?? "";
+              }
+            });
+
+            const compiledPrompt = interpolateTemplate(
+              config.promptTemplate,
+              variableValues,
+            );
+
+            try {
+              const { text, usage } = await generateGeminiText({
+                apiKey: geminiApiKey,
+                model: config.model,
+                prompt: compiledPrompt,
+                systemInstruction: config.systemInstruction,
+                temperature: config.temperature,
+                topP: config.topP,
+                topK: config.topK,
+                maxOutputTokens: config.maxOutputTokens,
+                responseMimeType: config.responseMimeType,
+              });
+
+              updateGeminiConfig(
+                node.id,
+                (existing) => ({
+                  ...existing,
+                  lastPreview: {
+                    executedAt: new Date().toISOString(),
+                    outputText: text,
+                    responseMimeType: existing.responseMimeType,
+                    usage,
+                  },
+                }),
+                { resetPreview: false },
+              );
+
+              const trimmedText = text.trim();
+              const payload: Record<string, string> = {
+                [`${node.id}.output_text`]: trimmedText,
+              };
+              if (config.responseMimeType === "application/json") {
+                payload[`${node.id}.output_json`] = trimmedText;
+              }
+              outputs.set(node.id, payload);
+
+              summary.push({
+                nodeId: node.id,
+                title: node.title,
+                status: "success",
+                detail: `Generated ${trimmedText.length} characters`,
+              });
+            } catch (error) {
+              const message =
+                error instanceof Error
+                  ? error.message
+                  : "Gemini request failed.";
+              encounteredError = true;
+              summary.push({
+                nodeId: node.id,
+                title: node.title,
+                status: "error",
+                detail: message,
+              });
+              setWorkflowRunError(message);
+              break;
+            }
+            continue;
+          }
+
+          summary.push({
+            nodeId: node.id,
+            title: node.title,
+            status: "skipped",
+            detail: "Node type not yet executable.",
+          });
+        }
+
+        setWorkflowRunSummary(summary);
+        if (!encounteredError) {
+          setWorkflowRunError(null);
+        }
+      } finally {
+        setIsWorkflowRunning(false);
+      }
+    },
+    [
+      activeWorkflow,
+      cancelPendingConnection,
+      geminiApiKey,
+      isWorkflowRunning,
+      updateGeminiConfig,
+      updateHttpConfig,
+      updateStellarConfig,
+    ],
+  );
+
   const [selectedNodeId, setSelectedNodeId] = useState<string>();
 
   useEffect(() => {
@@ -1059,6 +1885,9 @@ const Builder = () => {
 
   const handleCanvasPointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
+      if (pendingConnectionSourceRef.current) {
+        cancelPendingConnection();
+      }
       if (event.button !== 0 && event.button !== 1) {
         return;
       }
@@ -1078,7 +1907,7 @@ const Builder = () => {
         /* noop */
       }
     },
-    [],
+    [cancelPendingConnection],
   );
 
   const handleCanvasPointerMove = useCallback(
@@ -1230,6 +2059,44 @@ const Builder = () => {
     [nodes, selectedNodeId],
   );
 
+  const selectedStellarNode = useMemo(() => {
+    if (selectedNode?.kind !== "stellar-account") {
+      return null;
+    }
+
+    const config = selectedNode.config as StellarAccountNodeConfig | undefined;
+
+    const isValidNetwork = STELLAR_NETWORK_OPTIONS.some(
+      (option) => option.value === config?.network,
+    );
+
+    const normalizedConfig: StellarAccountNodeConfig = {
+      ...DEFAULT_STELLAR_ACCOUNT_CONFIG,
+      ...(config ?? {}),
+      accountId: typeof config?.accountId === "string" ? config.accountId : "",
+      network: isValidNetwork
+        ? (config?.network as StellarNetwork)
+        : DEFAULT_STELLAR_ACCOUNT_CONFIG.network,
+      horizonUrl:
+        typeof config?.horizonUrl === "string" ? config.horizonUrl : "",
+      paymentsLimit:
+        typeof config?.paymentsLimit === "number" &&
+        Number.isFinite(config.paymentsLimit)
+          ? Math.min(200, Math.max(1, Math.round(config.paymentsLimit)))
+          : DEFAULT_STELLAR_ACCOUNT_CONFIG.paymentsLimit,
+      includeFailed:
+        typeof config?.includeFailed === "boolean"
+          ? config.includeFailed
+          : DEFAULT_STELLAR_ACCOUNT_CONFIG.includeFailed,
+      lastPreview: config?.lastPreview,
+    };
+
+    return {
+      ...(selectedNode as WorkflowNode<"stellar-account">),
+      config: normalizedConfig,
+    };
+  }, [selectedNode]);
+
   const selectedGeminiNode =
     selectedNode?.kind === "gemini"
       ? (selectedNode as WorkflowNode<"gemini">)
@@ -1256,11 +2123,226 @@ const Builder = () => {
     ? new Date(geminiLastPreview.executedAt).toLocaleTimeString()
     : null;
 
-  const [isPreviewRunning, setIsPreviewRunning] = useState(false);
-  const [previewError, setPreviewError] = useState<string | null>(null);
-  const [apiKeyDraft, setApiKeyDraft] = useState(storedGeminiKey);
-  const [isHttpPreviewRunning, setIsHttpPreviewRunning] = useState(false);
-  const [httpPreviewError, setHttpPreviewError] = useState<string | null>(null);
+  const stellarLastPreview = selectedStellarNode?.config.lastPreview;
+  const formattedStellarBalances = useMemo(() => {
+    const balances = stellarLastPreview?.balances;
+    if (balances == null) {
+      return null;
+    }
+    try {
+      return JSON.stringify(balances, null, 2);
+    } catch {
+      return "[Unable to format balances]";
+    }
+  }, [stellarLastPreview]);
+  const formattedStellarPayments = useMemo(() => {
+    const payments = stellarLastPreview?.payments;
+    if (!Array.isArray(payments)) {
+      return null;
+    }
+    try {
+      return JSON.stringify(payments, null, 2);
+    } catch {
+      return "[Unable to format payments]";
+    }
+  }, [stellarLastPreview]);
+  const aggregatedWalletJson = useMemo(() => {
+    if (!stellarLastPreview) {
+      return null;
+    }
+    const payload = {
+      accountId: stellarLastPreview.accountId,
+      network: stellarLastPreview.network,
+      horizonUrl: stellarLastPreview.horizonUrl,
+      balances: stellarLastPreview.balances ?? [],
+      payments: Array.isArray(stellarLastPreview.payments)
+        ? stellarLastPreview.payments
+        : [],
+    };
+    try {
+      return JSON.stringify(payload, null, 2);
+    } catch {
+      return JSON.stringify(payload);
+    }
+  }, [stellarLastPreview]);
+  const stellarPreviewTimestamp = stellarLastPreview?.executedAt
+    ? new Date(stellarLastPreview.executedAt).toLocaleTimeString()
+    : null;
+
+  const connectionRenderData = useMemo(() => {
+    return connections
+      .map((connection) => {
+        const fromNode = nodes.find((node) => node.id === connection.from);
+        const toNode = nodes.find((node) => node.id === connection.to);
+        if (!fromNode || !toNode) {
+          return null;
+        }
+
+        const fromCenter = {
+          x: fromNode.position.x + NODE_WIDTH / 2,
+          y: fromNode.position.y + NODE_HEIGHT / 2,
+        };
+        const toCenter = {
+          x: toNode.position.x + NODE_WIDTH / 2,
+          y: toNode.position.y + NODE_HEIGHT / 2,
+        };
+
+        const centerDx = toCenter.x - fromCenter.x;
+        const centerDy = toCenter.y - fromCenter.y;
+        const preferHorizontal = Math.abs(centerDx) >= Math.abs(centerDy);
+
+        const fromPoint = preferHorizontal
+          ? {
+              x:
+                centerDx >= 0
+                  ? fromNode.position.x + NODE_WIDTH
+                  : fromNode.position.x,
+              y: fromCenter.y,
+            }
+          : {
+              x: fromCenter.x,
+              y:
+                centerDy >= 0
+                  ? fromNode.position.y + NODE_HEIGHT
+                  : fromNode.position.y,
+            };
+
+        const toPoint = preferHorizontal
+          ? {
+              x:
+                centerDx >= 0
+                  ? toNode.position.x
+                  : toNode.position.x + NODE_WIDTH,
+              y: toCenter.y,
+            }
+          : {
+              x: toCenter.x,
+              y:
+                centerDy >= 0
+                  ? toNode.position.y
+                  : toNode.position.y + NODE_HEIGHT,
+            };
+
+        const dx = toPoint.x - fromPoint.x;
+        const dy = toPoint.y - fromPoint.y;
+        const length = Math.sqrt(dx * dx + dy * dy);
+        const angle = Math.atan2(dy, dx);
+
+        return {
+          id: connection.id,
+          fromId: connection.from,
+          toId: connection.to,
+          midpoint: {
+            x: (fromPoint.x + toPoint.x) / 2,
+            y: (fromPoint.y + toPoint.y) / 2,
+          },
+          fromPoint,
+          toPoint,
+          length,
+          angle,
+        };
+      })
+      .filter(
+        (
+          value,
+        ): value is {
+          id: string;
+          fromId: string;
+          toId: string;
+          midpoint: { x: number; y: number };
+          fromPoint: { x: number; y: number };
+          toPoint: { x: number; y: number };
+          length: number;
+          angle: number;
+        } => value !== null,
+      );
+  }, [connections, nodes]);
+
+  const nodeLookup = useMemo(() => {
+    const lookup = new Map<string, WorkflowNode>();
+    nodes.forEach((node) => lookup.set(node.id, node));
+    return lookup;
+  }, [nodes]);
+
+  const incomingConnections = useMemo(() => {
+    if (!selectedNodeId) {
+      return [] as WorkflowConnection[];
+    }
+    return connections.filter((connection) => connection.to === selectedNodeId);
+  }, [connections, selectedNodeId]);
+
+  const outgoingConnections = useMemo(() => {
+    if (!selectedNodeId) {
+      return [] as WorkflowConnection[];
+    }
+    return connections.filter(
+      (connection) => connection.from === selectedNodeId,
+    );
+  }, [connections, selectedNodeId]);
+
+  const [pendingConnectionSourceId, setPendingConnectionSourceId] = useState<
+    string | null
+  >(null);
+  const pendingConnectionSourceRef = useRef<string | null>(null);
+  const connectionsPanel = selectedNode ? (
+    <div className={styles.inspectorSection}>
+      <div className={styles.sectionHeader}>
+        <Text as="h4" size="xs">
+          Connections
+        </Text>
+        {pendingConnectionSourceId ? (
+          <Text as="p" size="xs" className={styles.inspectorHint}>
+            Select a target node to finish the link.
+          </Text>
+        ) : null}
+      </div>
+      {incomingConnections.length === 0 && outgoingConnections.length === 0 ? (
+        <Text as="p" size="xs" className={styles.inspectorHint}>
+          Click any node, then another, to link your actions. Port handles are
+          still available for precise connections.
+        </Text>
+      ) : (
+        <div className={styles.connectionList}>
+          {incomingConnections.map((connection) => {
+            const sourceNode = nodeLookup.get(connection.from);
+            return (
+              <div key={connection.id} className={styles.connectionRow}>
+                <span className={styles.connectionDirection}>←</span>
+                <span className={styles.connectionLabel}>
+                  {sourceNode?.title ?? connection.from}
+                </span>
+                <Button
+                  variant="tertiary"
+                  size="xs"
+                  onClick={() => removeConnection(connection.id)}
+                >
+                  Remove
+                </Button>
+              </div>
+            );
+          })}
+          {outgoingConnections.map((connection) => {
+            const targetNode = nodeLookup.get(connection.to);
+            return (
+              <div key={connection.id} className={styles.connectionRow}>
+                <span className={styles.connectionDirection}>→</span>
+                <span className={styles.connectionLabel}>
+                  {targetNode?.title ?? connection.to}
+                </span>
+                <Button
+                  variant="tertiary"
+                  size="xs"
+                  onClick={() => removeConnection(connection.id)}
+                >
+                  Remove
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  ) : null;
   const selectedHttpNode = useMemo(() => {
     if (selectedNode?.kind !== "http") {
       return null;
@@ -1322,11 +2404,17 @@ const Builder = () => {
     setIsPreviewRunning(false);
     setHttpPreviewError(null);
     setIsHttpPreviewRunning(false);
+    setStellarPreviewError(null);
+    setIsStellarPreviewRunning(false);
   }, [selectedNodeId]);
 
   useEffect(() => {
     setPreviewError(null);
   }, [geminiApiKey]);
+
+  useEffect(() => {
+    cancelPendingConnection();
+  }, [activeWorkflowId, nodes.length, cancelPendingConnection]);
 
   const getCanvasMetrics = useCallback(() => {
     if (!canvasRef.current) return null;
@@ -1354,16 +2442,91 @@ const Builder = () => {
               </Text>
             </div>
             <div className={styles.headerActions}>
-              <Button variant="tertiary" size="md">
+              <Button
+                variant="tertiary"
+                size="md"
+                onClick={() => void runWorkflow("preview")}
+                disabled={
+                  isWorkflowRunning || !activeWorkflow || nodes.length === 0
+                }
+              >
                 <Icon.Eye />
-                Preview run
+                {isWorkflowRunning && workflowRunLabel === "preview"
+                  ? "Running..."
+                  : "Preview run"}
               </Button>
-              <Button variant="primary" size="md">
+              <Button
+                variant="primary"
+                size="md"
+                onClick={() => void runWorkflow("run")}
+                disabled={
+                  isWorkflowRunning || !activeWorkflow || nodes.length === 0
+                }
+              >
                 <Icon.PlayCircle />
-                Save & run
+                {isWorkflowRunning && workflowRunLabel === "run"
+                  ? "Running..."
+                  : "Save & run"}
               </Button>
             </div>
           </header>
+
+          {workflowRunError ? (
+            <div className={styles.runBannerError}>
+              <Icon.AlertTriangle size="sm" />
+              <Text as="p" size="sm" className={styles.runBannerText}>
+                {workflowRunError}
+              </Text>
+              <Button variant="tertiary" size="sm" onClick={dismissRunSummary}>
+                Dismiss
+              </Button>
+            </div>
+          ) : workflowRunStats ? (
+            <div className={styles.runBanner}>
+              <Icon.CheckCircle02 size="sm" />
+              <div className={styles.runBannerBody}>
+                <Text as="p" size="sm" className={styles.runBannerText}>
+                  Last {workflowRunLabel === "run" ? "run" : "preview"}{" "}
+                  completed: {workflowRunStats.success} success ·{" "}
+                  {workflowRunStats.skipped} skipped · {workflowRunStats.failed}{" "}
+                  errors
+                </Text>
+                <ul className={styles.runSummaryList}>
+                  {workflowRunSummary.slice(0, 3).map((step) => (
+                    <li key={step.nodeId}>
+                      <span
+                        className={styles.runSummaryStatus}
+                        data-status={step.status}
+                      >
+                        {step.status === "success"
+                          ? "✔"
+                          : step.status === "error"
+                            ? "⚠"
+                            : "…"}
+                      </span>
+                      <span className={styles.runSummaryLabel}>
+                        {step.title}
+                      </span>
+                      {step.detail ? (
+                        <span className={styles.runSummaryDetail}>
+                          {" "}
+                          · {step.detail}
+                        </span>
+                      ) : null}
+                    </li>
+                  ))}
+                  {workflowRunSummary.length > 3 ? (
+                    <li className={styles.runSummaryMore}>
+                      + {workflowRunSummary.length - 3} more
+                    </li>
+                  ) : null}
+                </ul>
+              </div>
+              <Button variant="tertiary" size="sm" onClick={dismissRunSummary}>
+                Clear
+              </Button>
+            </div>
+          ) : null}
 
           <section className={styles.workspace}>
             <aside className={styles.palette}>
@@ -1430,6 +2593,7 @@ const Builder = () => {
                         return {
                           ...workflow,
                           nodes: [],
+                          connections: [],
                         };
                       });
                       setSelectedNodeId(undefined);
@@ -1478,16 +2642,73 @@ const Builder = () => {
                         height: BASE_CANVAS_HEIGHT,
                       }}
                     >
-                      {nodes.map((node) => (
-                        <CanvasNode
-                          key={node.id}
-                          node={node}
-                          isSelected={selectedNodeId === node.id}
-                          onSelect={(id) => setSelectedNodeId(id)}
-                          onDrag={moveNode}
-                          getCanvasMetrics={getCanvasMetrics}
-                        />
+                      <div className={styles.canvasConnections}>
+                        {connectionRenderData.map((connection) => {
+                          const isActive =
+                            pendingConnectionSourceId === connection.fromId;
+                          return (
+                            <div
+                              key={connection.id}
+                              className={[
+                                styles.connectionPipe,
+                                isActive ? styles.connectionPipeActive : "",
+                              ]
+                                .filter(Boolean)
+                                .join(" ")}
+                              style={{
+                                width: `${connection.length}px`,
+                                left: `${connection.fromPoint.x}px`,
+                                top: `${connection.fromPoint.y - CONNECTION_PIPE_HEIGHT / 2}px`,
+                                transform: `rotate(${connection.angle}rad)`,
+                              }}
+                            />
+                          );
+                        })}
+                      </div>
+                      {connectionRenderData.map((connection) => (
+                        <button
+                          key={`${connection.id}-remove`}
+                          type="button"
+                          className={styles.connectionRemove}
+                          style={{
+                            left: connection.midpoint.x - 10,
+                            top: connection.midpoint.y - 10,
+                          }}
+                          title="Remove connection"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            removeConnection(connection.id);
+                          }}
+                        >
+                          ×
+                        </button>
                       ))}
+                      {nodes.map((node) => {
+                        const isSource = pendingConnectionSourceId === node.id;
+                        const canAccept =
+                          pendingConnectionSourceId !== null &&
+                          pendingConnectionSourceId !== node.id &&
+                          !connections.some(
+                            (connection) =>
+                              connection.from === pendingConnectionSourceId &&
+                              connection.to === node.id,
+                          );
+                        return (
+                          <CanvasNode
+                            key={node.id}
+                            node={node}
+                            isSelected={selectedNodeId === node.id}
+                            onSelect={(id) => setSelectedNodeId(id)}
+                            onActivate={handleNodeActivate}
+                            onDrag={moveNode}
+                            getCanvasMetrics={getCanvasMetrics}
+                            onStartConnection={handleStartConnection}
+                            onCompleteConnection={handleCompleteConnection}
+                            isConnectionSource={isSource}
+                            canAcceptConnection={canAccept}
+                          />
+                        );
+                      })}
                       {nodes.length === 0 ? (
                         <div className={styles.canvasEmpty}>
                           <Icon.CursorClick02 size="lg" />
@@ -1567,8 +2788,250 @@ const Builder = () => {
                 </Text>
               </div>
               {selectedNode ? (
-                selectedNode.kind === "gemini" && selectedGeminiNode ? (
+                selectedNode.kind === "stellar-account" &&
+                selectedStellarNode ? (
                   <div className={styles.inspectorDetails}>
+                    {connectionsPanel}
+                    <Input
+                      id={`node-title-${selectedStellarNode.id}`}
+                      fieldSize="sm"
+                      label="Node title"
+                      value={selectedStellarNode.title}
+                      onChange={(event) => {
+                        const value = event.currentTarget.value;
+                        updateStellarNode(selectedStellarNode.id, (node) => ({
+                          ...node,
+                          title: value,
+                        }));
+                      }}
+                    />
+                    <Input
+                      id={`stellar-account-id-${selectedStellarNode.id}`}
+                      fieldSize="md"
+                      label="Account ID"
+                      placeholder="GBZX..."
+                      value={selectedStellarNode.config.accountId}
+                      onChange={(event) => {
+                        const value = event.currentTarget.value;
+                        updateStellarConfig(
+                          selectedStellarNode.id,
+                          (config) => ({
+                            ...config,
+                            accountId: value,
+                          }),
+                        );
+                      }}
+                    />
+                    <Select
+                      id={`stellar-network-${selectedStellarNode.id}`}
+                      fieldSize="sm"
+                      label="Network"
+                      value={selectedStellarNode.config.network}
+                      onChange={(event) => {
+                        const value = event.currentTarget
+                          .value as StellarNetwork;
+                        if (value === selectedStellarNode.config.network) {
+                          return;
+                        }
+                        updateStellarConfig(
+                          selectedStellarNode.id,
+                          (config) => ({
+                            ...config,
+                            network: value,
+                          }),
+                        );
+                      }}
+                    >
+                      {STELLAR_NETWORK_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </Select>
+                    <Input
+                      id={`stellar-horizon-${selectedStellarNode.id}`}
+                      fieldSize="md"
+                      label="Custom Horizon URL"
+                      placeholder="https://horizon.stellar.org"
+                      value={selectedStellarNode.config.horizonUrl}
+                      onChange={(event) => {
+                        const value = event.currentTarget.value;
+                        updateStellarConfig(
+                          selectedStellarNode.id,
+                          (config) => ({
+                            ...config,
+                            horizonUrl: value,
+                          }),
+                        );
+                      }}
+                    />
+                    <div className={styles.parameterGrid}>
+                      <Input
+                        id={`stellar-limit-${selectedStellarNode.id}`}
+                        fieldSize="sm"
+                        type="number"
+                        min="1"
+                        max="200"
+                        step="1"
+                        label="Payments to fetch"
+                        value={selectedStellarNode.config.paymentsLimit}
+                        onChange={(event) => {
+                          const parsed = Number(event.currentTarget.value);
+                          updateStellarConfig(
+                            selectedStellarNode.id,
+                            (config) => {
+                              const normalized = Number.isNaN(parsed)
+                                ? config.paymentsLimit
+                                : Math.min(
+                                    200,
+                                    Math.max(1, Math.round(parsed)),
+                                  );
+                              if (normalized === config.paymentsLimit) {
+                                return config;
+                              }
+                              return {
+                                ...config,
+                                paymentsLimit: normalized,
+                              };
+                            },
+                          );
+                        }}
+                      />
+                      <Select
+                        id={`stellar-include-failed-${selectedStellarNode.id}`}
+                        fieldSize="sm"
+                        label="Include failed"
+                        value={
+                          selectedStellarNode.config.includeFailed
+                            ? "true"
+                            : "false"
+                        }
+                        onChange={(event) => {
+                          const value = event.currentTarget.value === "true";
+                          if (
+                            value === selectedStellarNode.config.includeFailed
+                          ) {
+                            return;
+                          }
+                          updateStellarConfig(
+                            selectedStellarNode.id,
+                            (config) => ({
+                              ...config,
+                              includeFailed: value,
+                            }),
+                          );
+                        }}
+                      >
+                        <option value="false">No</option>
+                        <option value="true">Yes</option>
+                      </Select>
+                    </div>
+                    <Text as="p" size="xs" className={styles.inspectorHint}>
+                      Fetch balances and recent payments; leave Horizon blank to
+                      use the default for the selected network.
+                    </Text>
+                    <div className={styles.inspectorActions}>
+                      <Button
+                        variant="primary"
+                        size="md"
+                        onClick={() =>
+                          void runStellarPreview(selectedStellarNode)
+                        }
+                        disabled={isStellarPreviewRunning}
+                      >
+                        {isStellarPreviewRunning
+                          ? "Fetching..."
+                          : "Fetch from Horizon"}
+                      </Button>
+                    </div>
+                    {stellarPreviewError ? (
+                      <Text as="p" size="xs" className={styles.errorMessage}>
+                        {stellarPreviewError}
+                      </Text>
+                    ) : null}
+                    {stellarLastPreview ? (
+                      <div className={styles.previewPanel}>
+                        <Text
+                          as="h4"
+                          size="xs"
+                          className={styles.previewHeader}
+                        >
+                          Last preview
+                          {stellarPreviewTimestamp
+                            ? ` · ${stellarPreviewTimestamp}`
+                            : ""}
+                        </Text>
+                        <Text as="p" size="xs" className={styles.previewMeta}>
+                          Network {stellarLastPreview.network} · Horizon{" "}
+                          {stellarLastPreview.horizonUrl}
+                        </Text>
+                        {aggregatedWalletJson ? (
+                          <>
+                            <Text
+                              as="p"
+                              size="xs"
+                              className={styles.previewMeta}
+                            >
+                              Use this JSON as{" "}
+                              <span
+                                className={styles.codeInline}
+                              >{`{{wallet_json}}`}</span>{" "}
+                              input for Gemini prompts.
+                            </Text>
+                            <pre className={styles.previewOutput}>
+                              {aggregatedWalletJson}
+                            </pre>
+                          </>
+                        ) : null}
+                        {stellarLastPreview.error ? (
+                          <Text
+                            as="p"
+                            size="xs"
+                            className={styles.errorMessage}
+                          >
+                            {stellarLastPreview.error}
+                          </Text>
+                        ) : null}
+                        {formattedStellarBalances ||
+                        formattedStellarPayments ? (
+                          <details className={styles.previewDetails}>
+                            <summary>Raw Horizon fields</summary>
+                            {formattedStellarBalances ? (
+                              <>
+                                <Text
+                                  as="h5"
+                                  size="xs"
+                                  className={styles.previewHeader}
+                                >
+                                  Balances
+                                </Text>
+                                <pre className={styles.previewOutput}>
+                                  {formattedStellarBalances}
+                                </pre>
+                              </>
+                            ) : null}
+                            {formattedStellarPayments ? (
+                              <>
+                                <Text
+                                  as="h5"
+                                  size="xs"
+                                  className={styles.previewHeader}
+                                >
+                                  Recent payments
+                                </Text>
+                                <pre className={styles.previewOutput}>
+                                  {formattedStellarPayments}
+                                </pre>
+                              </>
+                            ) : null}
+                          </details>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : selectedNode.kind === "gemini" && selectedGeminiNode ? (
+                  <div className={styles.inspectorDetails}>
+                    {connectionsPanel}
                     <Input
                       id={`node-title-${selectedGeminiNode.id}`}
                       fieldSize="sm"
@@ -1914,6 +3377,7 @@ const Builder = () => {
                   </div>
                 ) : selectedNode.kind === "http" && selectedHttpNode ? (
                   <div className={styles.inspectorDetails}>
+                    {connectionsPanel}
                     <Input
                       id={`node-title-${selectedHttpNode.id}`}
                       fieldSize="sm"
@@ -2487,6 +3951,7 @@ const Builder = () => {
                   </div>
                 ) : (
                   <div className={styles.inspectorDetails}>
+                    {connectionsPanel}
                     <Text as="h3" size="sm">
                       {selectedNode.title}
                     </Text>

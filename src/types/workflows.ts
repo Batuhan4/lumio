@@ -6,6 +6,8 @@ export type WorkflowNodeKind =
   | "conditional"
   | "ipfs";
 
+export type StellarNetwork = "PUBLIC" | "TESTNET" | "FUTURENET" | "LOCAL";
+
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD";
 
 export type HttpKeyValue = {
@@ -81,10 +83,29 @@ export type GeminiNodeConfig = {
 export type WorkflowNodeConfigMap = {
   gemini: GeminiNodeConfig;
   http: HttpNodeConfig;
-  "stellar-account": Record<string, never>;
+  "stellar-account": StellarAccountNodeConfig;
   classifier: Record<string, never>;
   conditional: Record<string, never>;
   ipfs: Record<string, never>;
+};
+
+export type StellarAccountNodeConfig = {
+  accountId: string;
+  network: StellarNetwork;
+  horizonUrl: string;
+  paymentsLimit: number;
+  includeFailed: boolean;
+  lastPreview?: StellarAccountPreview;
+};
+
+export type StellarAccountPreview = {
+  executedAt: string;
+  accountId: string;
+  network: StellarNetwork;
+  horizonUrl: string;
+  balances?: unknown;
+  payments?: unknown;
+  error?: string;
 };
 
 export type WorkflowNode<K extends WorkflowNodeKind = WorkflowNodeKind> = {
@@ -143,6 +164,14 @@ export const DEFAULT_HTTP_CONFIG: HttpNodeConfig = {
   timeoutMs: 10000,
   inputVariables: [],
   testInputs: {},
+};
+
+export const DEFAULT_STELLAR_ACCOUNT_CONFIG: StellarAccountNodeConfig = {
+  accountId: "",
+  network: "PUBLIC",
+  horizonUrl: "",
+  paymentsLimit: 20,
+  includeFailed: false,
 };
 
 export const EMPTY_WORKFLOW_STATE: WorkflowDraftState = {

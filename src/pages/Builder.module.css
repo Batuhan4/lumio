@@ -25,6 +25,76 @@
   flex-wrap: wrap;
 }
 
+.runBanner,
+.runBannerError {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(155, 92, 255, 0.22);
+  background: rgba(18, 2, 60, 0.65);
+}
+
+.runBannerError {
+  border-color: rgba(255, 110, 110, 0.45);
+  background: rgba(110, 10, 24, 0.55);
+}
+
+.runBannerBody {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 1;
+}
+
+.runBannerText {
+  color: rgba(231, 236, 255, 0.92);
+}
+
+.runSummaryList {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+}
+
+.runSummaryList li {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: rgba(214, 224, 255, 0.78);
+}
+
+.runSummaryStatus[data-status="success"] {
+  color: rgba(86, 255, 190, 0.95);
+}
+
+.runSummaryStatus[data-status="error"] {
+  color: rgba(255, 152, 120, 0.95);
+}
+
+.runSummaryStatus[data-status="skipped"] {
+  color: rgba(214, 224, 255, 0.55);
+}
+
+.runSummaryLabel {
+  font-weight: 600;
+}
+
+.runSummaryDetail {
+  color: rgba(214, 224, 255, 0.65);
+  font-weight: 400;
+}
+
+.runSummaryMore {
+  color: rgba(214, 224, 255, 0.6);
+}
+
 .workspace {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr) 320px;
@@ -165,6 +235,71 @@
   top: 0;
   left: 0;
   transform-origin: 0 0;
+}
+
+.canvasConnections {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.connectionPipe {
+  position: absolute;
+  height: 12px;
+  transform-origin: 0 50%;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.connectionPipe::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    rgba(147, 255, 235, 0.92),
+    rgba(132, 108, 255, 0.92)
+  );
+  box-shadow:
+    0 0 18px rgba(108, 226, 255, 0.6),
+    0 0 28px rgba(76, 42, 190, 0.45);
+  opacity: 0.95;
+}
+
+.connectionPipeActive::before {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 215, 160, 0.98),
+    rgba(255, 140, 86, 0.98)
+  );
+  box-shadow:
+    0 0 22px rgba(255, 176, 96, 0.75),
+    0 0 34px rgba(255, 136, 82, 0.45);
+  opacity: 1;
+}
+
+.connectionRemove {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  border: none;
+  background: rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    transform 120ms ease,
+    background 120ms ease;
+  pointer-events: auto;
+}
+
+.connectionRemove:hover,
+.connectionRemove:focus-visible {
+  transform: scale(1.15);
+  background: rgba(255, 82, 82, 0.75);
 }
 
 .canvasEmpty {
@@ -321,6 +456,36 @@
   color: var(--lumio-text-muted);
 }
 
+.connectionList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.connectionRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.4rem;
+  border-radius: 0.6rem;
+  background: rgba(16, 2, 58, 0.45);
+  border: 1px solid rgba(155, 92, 255, 0.12);
+}
+
+.connectionDirection {
+  font-size: 0.8rem;
+  color: rgba(214, 224, 255, 0.7);
+}
+
+.connectionLabel {
+  font-size: 0.8rem;
+  color: rgba(231, 236, 255, 0.92);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .paletteItem svg {
   flex-shrink: 0;
 }
@@ -357,6 +522,20 @@
     0 16px 36px rgba(72, 16, 189, 0.5);
 }
 
+.nodeAsSource {
+  border-color: rgba(12, 220, 255, 0.65);
+  box-shadow:
+    0 0 0 2px rgba(12, 220, 255, 0.35),
+    0 16px 30px rgba(12, 220, 255, 0.28);
+}
+
+.nodeReadyTarget {
+  border-color: rgba(255, 168, 92, 0.7);
+  box-shadow:
+    0 0 0 2px rgba(255, 168, 92, 0.32),
+    0 14px 28px rgba(255, 168, 92, 0.22);
+}
+
 .nodeHeader {
   display: flex;
   justify-content: space-between;
@@ -389,12 +568,39 @@
   align-items: center;
 }
 
+.nodePorts button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  padding: 0;
+}
+
 .nodePort {
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.8);
   box-shadow: 0 0 12px rgba(255, 255, 255, 0.45);
+  cursor: pointer;
+  transition:
+    transform 120ms ease,
+    background 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.nodePort:hover,
+.nodePort:focus-visible {
+  transform: scale(1.15);
+  background: rgba(12, 220, 255, 0.9);
+  box-shadow: 0 0 16px rgba(12, 220, 255, 0.65);
+}
+
+.nodePort:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 @media (max-width: 1200px) {
