@@ -17,12 +17,14 @@ export type SmartWalletTransaction = {
 
 export type SmartWalletPersistence = {
   balance: number;
+  syncedBalance: number;
   lifetimeSpend: number;
   transactions: SmartWalletTransaction[];
 };
 
 export const SMART_WALLET_DEFAULT_STATE: SmartWalletPersistence = {
   balance: 0,
+  syncedBalance: 0,
   lifetimeSpend: 0,
   transactions: [],
 };

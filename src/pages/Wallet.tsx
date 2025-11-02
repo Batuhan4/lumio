@@ -48,9 +48,9 @@ const Wallet = () => {
     networkPassphrase: walletNetworkPassphrase,
   } = useWallet();
   const { addNotification } = useNotification();
-  const { refresh: refreshSmartWallet } = useSmartWallet();
+  const { balance: smartWalletBalance, refresh: refreshSmartWallet } =
+    useSmartWallet();
   const {
-    balance: vaultBalance,
     isLoading: isVaultBalanceLoading,
     error: vaultBalanceError,
     refresh: refreshVaultBalance,
@@ -66,10 +66,13 @@ const Wallet = () => {
 
   const availableBalance = useMemo(() => {
     if (!address || vaultBalanceError) return 0;
-    return Math.max(0, vaultBalance - reservedBalance - pendingWithdrawals);
+    return Math.max(
+      0,
+      smartWalletBalance - reservedBalance - pendingWithdrawals,
+    );
   }, [
     address,
-    vaultBalance,
+    smartWalletBalance,
     vaultBalanceError,
     reservedBalance,
     pendingWithdrawals,
@@ -79,8 +82,8 @@ const Wallet = () => {
     if (!address) return "Connect wallet";
     if (isVaultBalanceLoading) return "Loading...";
     if (vaultBalanceError) return "—";
-    return formatCurrency(vaultBalance);
-  }, [address, isVaultBalanceLoading, vaultBalanceError, vaultBalance]);
+    return formatCurrency(smartWalletBalance);
+  }, [address, isVaultBalanceLoading, vaultBalanceError, smartWalletBalance]);
 
   const availableDisplay = useMemo(() => {
     if (!address) return "Connect wallet";

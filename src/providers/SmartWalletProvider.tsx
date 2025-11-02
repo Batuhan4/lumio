@@ -20,11 +20,10 @@ const STORAGE_KEY = "smartWallet";
 const MAX_TRANSACTIONS = 50;
 const PRECISION_FACTOR = 1_000_000;
 
-const clampCurrency = (value: number) =>
-  Math.max(
-    0,
-    Math.round(Number(value || 0) * PRECISION_FACTOR) / PRECISION_FACTOR,
-  );
+const roundCurrency = (value: number) =>
+  Math.round(Number(value || 0) * PRECISION_FACTOR) / PRECISION_FACTOR;
+
+const clampCurrency = (value: number) => Math.max(0, roundCurrency(value));
 
 const safeNumber = (value: unknown): number =>
   typeof value === "number" && Number.isFinite(value) ? value : 0;
@@ -127,8 +126,15 @@ const sanitizeState = (
         .slice(0, MAX_TRANSACTIONS)
     : [];
 
+  const syncedBalance = clampCurrency(
+    safeNumber(
+      (raw as Partial<SmartWalletPersistence>).syncedBalance ?? balance,
+    ),
+  );
+
   return {
     balance,
+    syncedBalance,
     lifetimeSpend,
     transactions,
   };
@@ -139,6 +145,7 @@ const loadState = (): SmartWalletPersistence => {
   return {
     ...persisted,
     balance: 0,
+    syncedBalance: 0,
   };
 };
 
@@ -207,6 +214,7 @@ const applyDebit = (
   return {
     next: {
       balance: nextBalance,
+      syncedBalance: prev.syncedBalance,
       lifetimeSpend: nextLifetime,
       transactions,
     },
@@ -259,6 +267,7 @@ const applyCredit = (
   return {
     next: {
       balance: nextBalance,
+      syncedBalance: prev.syncedBalance,
       lifetimeSpend: prev.lifetimeSpend,
       transactions,
     },
@@ -305,10 +314,15 @@ export const SmartWalletProvider = ({ children }: PropsWithChildren) => {
   useEffect(() => {
     if (!hasAddress) {
       setState((previous) => {
-        if (previous.balance === 0) {
+        const sanitizedPrev = sanitizeState(previous);
+        if (sanitizedPrev.balance === 0 && sanitizedPrev.syncedBalance === 0) {
           return previous;
         }
-        const next = { ...previous, balance: 0 };
+        const next: SmartWalletPersistence = {
+          ...sanitizedPrev,
+          balance: 0,
+          syncedBalance: 0,
+        };
         persist(next);
         return next;
       });
@@ -319,12 +333,24 @@ export const SmartWalletProvider = ({ children }: PropsWithChildren) => {
       return;
     }
 
-    const nextBalance = clampCurrency(vaultBalance);
+    const nextSyncedBalance = clampCurrency(vaultBalance);
     setState((previous) => {
-      if (previous.balance === nextBalance) {
+      const sanitizedPrev = sanitizeState(previous);
+      const previousSynced = sanitizedPrev.syncedBalance;
+      const delta = roundCurrency(nextSyncedBalance - previousSynced);
+      const nextBalance = clampCurrency(sanitizedPrev.balance + delta);
+      if (
+        delta === 0 &&
+        nextBalance === sanitizedPrev.balance &&
+        previousSynced === nextSyncedBalance
+      ) {
         return previous;
       }
-      const next = { ...previous, balance: nextBalance };
+      const next: SmartWalletPersistence = {
+        ...sanitizedPrev,
+        balance: nextBalance,
+        syncedBalance: nextSyncedBalance,
+      };
       persist(next);
       return next;
     });
