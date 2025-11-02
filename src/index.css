@@ -28,6 +28,7 @@ body {
       transparent 48%
     ),
     linear-gradient(160deg, #04060f, #060b17 45%, #0a1324 78%, #050812);
+  font-family: "Inter", system-ui, sans-serif;
   color: var(--lumio-text-primary);
   min-height: 100vh;
   font-feature-settings:
