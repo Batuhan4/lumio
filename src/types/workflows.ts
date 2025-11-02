@@ -138,7 +138,7 @@ export type WorkflowDraftState = {
 };
 
 export const DEFAULT_GEMINI_CONFIG: GeminiNodeConfig = {
-  model: "gemini-2.0-flash",
+  model: "gemini-2.5-flash",
   systemInstruction: "",
   promptTemplate: "Summarize the following input:\n\n{{input}}",
   temperature: 0.6,
@@ -168,7 +168,7 @@ export const DEFAULT_HTTP_CONFIG: HttpNodeConfig = {
 
 export const DEFAULT_STELLAR_ACCOUNT_CONFIG: StellarAccountNodeConfig = {
   accountId: "",
-  network: "PUBLIC",
+  network: "LOCAL",
   horizonUrl: "",
   paymentsLimit: 20,
   includeFailed: false,

@@ -258,24 +258,24 @@
   border-radius: 999px;
   background: linear-gradient(
     90deg,
-    rgba(147, 255, 235, 0.92),
-    rgba(132, 108, 255, 0.92)
+    rgba(64, 160, 255, 0.95) 0%,
+    rgba(255, 140, 86, 0.95) 100%
   );
   box-shadow:
-    0 0 18px rgba(108, 226, 255, 0.6),
-    0 0 28px rgba(76, 42, 190, 0.45);
+    0 0 20px rgba(64, 160, 255, 0.45),
+    0 0 18px rgba(255, 140, 86, 0.35);
   opacity: 0.95;
 }
 
 .connectionPipeActive::before {
   background: linear-gradient(
     90deg,
-    rgba(255, 215, 160, 0.98),
-    rgba(255, 140, 86, 0.98)
+    rgba(86, 210, 255, 1) 0%,
+    rgba(255, 168, 92, 1) 100%
   );
   box-shadow:
-    0 0 22px rgba(255, 176, 96, 0.75),
-    0 0 34px rgba(255, 136, 82, 0.45);
+    0 0 24px rgba(86, 210, 255, 0.7),
+    0 0 36px rgba(255, 168, 92, 0.55);
   opacity: 1;
 }
 
@@ -334,21 +334,6 @@
   flex-direction: column;
   gap: 0.75rem;
   color: var(--lumio-text-muted);
-}
-
-.apiKeyPanel {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  padding-bottom: 1rem;
-  margin-bottom: 1rem;
-  border-bottom: 1px solid rgba(155, 92, 255, 0.14);
-}
-
-.apiKeyRow {
-  display: flex;
-  gap: 0.5rem;
-  align-items: flex-end;
 }
 
 .parameterGrid {

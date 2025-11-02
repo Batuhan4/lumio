@@ -37,20 +37,22 @@ export const useGeminiApiKey = () => {
     storage.removeItem(STORAGE_KEY);
   }, []);
 
+  const envKey =
+    typeof import.meta.env.VITE_GEMINI_API_KEY === "string"
+      ? import.meta.env.VITE_GEMINI_API_KEY
+      : "";
+
   const effectiveKey = useMemo(() => {
     if (storedKey) {
       return storedKey;
     }
-    const envKey =
-      typeof import.meta.env.VITE_GEMINI_API_KEY === "string"
-        ? import.meta.env.VITE_GEMINI_API_KEY
-        : "";
     return envKey;
-  }, [storedKey]);
+  }, [storedKey, envKey]);
 
   return {
     apiKey: effectiveKey,
     persistedKey: storedKey,
+    envKey,
     setApiKey,
     clearApiKey,
   };

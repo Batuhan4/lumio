@@ -27,6 +27,7 @@ import { executeHttpRequest } from "../services/http";
 import type { HttpRequestExecution } from "../services/http";
 import { interpolateTemplate } from "../util/templates";
 import { useGeminiApiKey } from "../hooks/useGeminiApiKey";
+import { useWallet } from "../hooks/useWallet";
 import {
   DEFAULT_HTTP_CONFIG,
   DEFAULT_STELLAR_ACCOUNT_CONFIG,
@@ -57,6 +58,7 @@ const MAX_CANVAS_SCALE = 64;
 const CANVAS_ZOOM_FACTOR = 1.2;
 const CONNECTION_PIPE_HEIGHT = 12;
 const GEMINI_MODEL_OPTIONS = [
+  "gemini-2.5-flash",
   "gemini-2.0-flash",
   "gemini-2.0-pro",
   "gemini-1.5-flash",
@@ -559,12 +561,8 @@ const Builder = () => {
       : null;
   const nodes = activeWorkflow?.nodes ?? EMPTY_NODES;
   const connections = activeWorkflow?.connections ?? EMPTY_CONNECTIONS;
-  const {
-    apiKey: geminiApiKey,
-    persistedKey: storedGeminiKey,
-    setApiKey: persistGeminiKey,
-    clearApiKey,
-  } = useGeminiApiKey();
+  const { apiKey: geminiApiKey } = useGeminiApiKey();
+  const { address: walletAddress } = useWallet();
 
   const updateActiveWorkflow = useCallback(
     (
@@ -1137,7 +1135,9 @@ const Builder = () => {
   const runGeminiPreview = useCallback(
     async (node: WorkflowNode<"gemini">) => {
       if (!geminiApiKey) {
-        setPreviewError("Add a Gemini API key above to run previews.");
+        setPreviewError(
+          "Set VITE_GEMINI_API_KEY (for example in .env.local) before running Gemini previews.",
+        );
         return;
       }
 
@@ -1270,9 +1270,31 @@ const Builder = () => {
       setIsStellarPreviewRunning(true);
       setStellarPreviewError(null);
 
+      const trimmedAccountId = (node.config.accountId ?? "").trim();
+      const walletFallback = walletAddress?.trim() ?? "";
+      const accountId = trimmedAccountId || walletFallback;
+      if (!accountId) {
+        setStellarPreviewError(
+          "Connect a wallet or enter a Stellar account ID (public key).",
+        );
+        setIsStellarPreviewRunning(false);
+        return;
+      }
+
+      if (accountId !== trimmedAccountId) {
+        updateStellarConfig(
+          node.id,
+          (config) => ({
+            ...config,
+            accountId,
+          }),
+          { resetPreview: false },
+        );
+      }
+
       try {
         const result = await fetchStellarAccount({
-          accountId: node.config.accountId,
+          accountId,
           network: node.config.network,
           horizonUrl: node.config.horizonUrl,
           paymentsLimit: node.config.paymentsLimit,
@@ -1290,7 +1312,7 @@ const Builder = () => {
               horizonUrl: result.horizonUrl ?? config.horizonUrl,
               lastPreview: {
                 executedAt,
-                accountId: node.config.accountId,
+                accountId,
                 network: node.config.network,
                 horizonUrl: result.horizonUrl,
                 error: result.error,
@@ -1326,12 +1348,11 @@ const Builder = () => {
         setIsStellarPreviewRunning(false);
       }
     },
-    [updateStellarConfig],
+    [updateStellarConfig, walletAddress],
   );
 
   const [isPreviewRunning, setIsPreviewRunning] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
-  const [apiKeyDraft, setApiKeyDraft] = useState(storedGeminiKey);
   const [isHttpPreviewRunning, setIsHttpPreviewRunning] = useState(false);
   const [httpPreviewError, setHttpPreviewError] = useState<string | null>(null);
   const [isStellarPreviewRunning, setIsStellarPreviewRunning] = useState(false);
@@ -1459,9 +1480,37 @@ const Builder = () => {
 
           if (node.kind === "stellar-account") {
             const config = node.config as StellarAccountNodeConfig;
+            const trimmedAccountId = (config.accountId ?? "").trim();
+            const walletFallback = walletAddress?.trim() ?? "";
+            const accountId = trimmedAccountId || walletFallback;
+            if (!accountId) {
+              const message =
+                "Connect a wallet or enter a Stellar account ID (public key).";
+              encounteredError = true;
+              summary.push({
+                nodeId: node.id,
+                title: node.title,
+                status: "error",
+                detail: message,
+              });
+              setWorkflowRunError(message);
+              break;
+            }
+
+            if (accountId !== trimmedAccountId) {
+              updateStellarConfig(
+                node.id,
+                (existing) => ({
+                  ...existing,
+                  accountId,
+                }),
+                { resetPreview: false },
+              );
+            }
+
             try {
               const result = await fetchStellarAccount({
-                accountId: config.accountId,
+                accountId,
                 network: config.network,
                 horizonUrl: config.horizonUrl,
                 paymentsLimit: config.paymentsLimit,
@@ -1658,7 +1707,7 @@ const Builder = () => {
           if (node.kind === "gemini") {
             if (!geminiApiKey) {
               const message =
-                "Add a Gemini API key before running Gemini nodes.";
+                "Set VITE_GEMINI_API_KEY (for example in .env.local) before running Gemini nodes.";
               encounteredError = true;
               summary.push({
                 nodeId: node.id,
@@ -1768,6 +1817,7 @@ const Builder = () => {
       updateGeminiConfig,
       updateHttpConfig,
       updateStellarConfig,
+      walletAddress,
     ],
   );
 
@@ -2450,10 +2500,6 @@ const Builder = () => {
     : null;
 
   useEffect(() => {
-    setApiKeyDraft(storedGeminiKey);
-  }, [storedGeminiKey]);
-
-  useEffect(() => {
     setPreviewError(null);
     setIsPreviewRunning(false);
     setHttpPreviewError(null);
@@ -2465,6 +2511,46 @@ const Builder = () => {
   useEffect(() => {
     setPreviewError(null);
   }, [geminiApiKey]);
+
+  useEffect(() => {
+    if (!walletAddress) {
+      return;
+    }
+    const stellarNodeCount = nodes.filter(
+      (node) => node.kind === "stellar-account",
+    ).length;
+    if (stellarNodeCount === 0) {
+      return;
+    }
+    updateActiveWorkflow((workflow) => {
+      let didChange = false;
+      const updatedNodes = workflow.nodes.map((node) => {
+        if (node.kind !== "stellar-account") {
+          return node;
+        }
+        const config = node.config as StellarAccountNodeConfig;
+        const accountId = (config.accountId ?? "").trim();
+        if (accountId !== "") {
+          return node;
+        }
+        didChange = true;
+        return {
+          ...node,
+          config: {
+            ...config,
+            accountId: walletAddress,
+          },
+        };
+      });
+      if (!didChange) {
+        return workflow;
+      }
+      return {
+        ...workflow,
+        nodes: updatedNodes,
+      };
+    });
+  }, [walletAddress, nodes, updateActiveWorkflow]);
 
   useEffect(() => {
     cancelPendingConnection();
@@ -2537,7 +2623,7 @@ const Builder = () => {
             </div>
           ) : workflowRunStats ? (
             <div className={styles.runBanner}>
-              <Icon.CheckCircle02 size="sm" />
+              <Icon.CheckCircle size="sm" />
               <div className={styles.runBannerBody}>
                 <Text as="p" size="sm" className={styles.runBannerText}>
                   Last {workflowRunLabel === "run" ? "run" : "preview"}{" "}
@@ -2789,56 +2875,6 @@ const Builder = () => {
                 </Text>
                 <Text as="p" size="xs">
                   Select a node to edit inputs, outputs, and budgets.
-                </Text>
-              </div>
-              <div className={styles.apiKeyPanel}>
-                <div className={styles.sectionHeader}>
-                  <Text as="h3" size="xs">
-                    Gemini API key
-                  </Text>
-                  <Text as="p" size="xs" className={styles.inspectorHint}>
-                    {storedGeminiKey
-                      ? "Stored locally"
-                      : geminiApiKey
-                        ? "Using VITE_GEMINI_API_KEY"
-                        : "No key configured"}
-                  </Text>
-                </div>
-                <div className={styles.apiKeyRow}>
-                  <Input
-                    id="gemini-api-key"
-                    fieldSize="sm"
-                    type="password"
-                    placeholder="Paste or override key"
-                    value={apiKeyDraft}
-                    onChange={(event) =>
-                      setApiKeyDraft(event.currentTarget.value)
-                    }
-                  />
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => persistGeminiKey(apiKeyDraft)}
-                    disabled={apiKeyDraft.trim() === storedGeminiKey.trim()}
-                  >
-                    Save
-                  </Button>
-                  {storedGeminiKey ? (
-                    <Button
-                      variant="tertiary"
-                      size="sm"
-                      onClick={() => {
-                        clearApiKey();
-                        setApiKeyDraft("");
-                      }}
-                    >
-                      Clear
-                    </Button>
-                  ) : null}
-                </div>
-                <Text as="p" size="xs" className={styles.inspectorHint}>
-                  Keys are stored in this browser only. Leave blank to fall back
-                  to VITE_GEMINI_API_KEY.
                 </Text>
               </div>
               {selectedNode ? (
