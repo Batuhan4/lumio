@@ -128,6 +128,30 @@ const Wallet = () => {
     return formatCurrency(availableBalance);
   }, [address, isVaultBalanceLoading, vaultBalanceError, availableBalance]);
 
+  const commitmentsBalance = useMemo(
+    () => reservedBalance + pendingWithdrawals,
+    [reservedBalance, pendingWithdrawals],
+  );
+
+  const hasBalanceData =
+    Boolean(address) && !isVaultBalanceLoading && !vaultBalanceError;
+  const totalEscrow = hasBalanceData ? Math.max(0, smartWalletBalance) : 0;
+
+  const availablePercent = useMemo(() => {
+    if (!hasBalanceData || totalEscrow <= 0) {
+      return 0;
+    }
+    const ratio = Math.min(1, Math.max(0, availableBalance / totalEscrow));
+    return Math.round(ratio * 100);
+  }, [hasBalanceData, totalEscrow, availableBalance]);
+
+  const committedPercent = useMemo(() => {
+    if (!hasBalanceData || totalEscrow <= 0) {
+      return 0;
+    }
+    return Math.max(0, 100 - availablePercent);
+  }, [hasBalanceData, totalEscrow, availablePercent]);
+
   const loadRunnerSettings = useCallback(async () => {
     if (!address) {
       setRunnerGrants([]);
@@ -719,9 +743,15 @@ const Wallet = () => {
         <div className={styles.primaryGrid}>
           <div className={styles.panel}>
             <div className={styles.cardContent}>
-              <Text as="h3" size="md">
-                Balances
-              </Text>
+              <div className={styles.cardHeading}>
+                <Text as="h3" size="md">
+                  Balances
+                </Text>
+                <Text as="p" size="sm" className={styles.balanceIntro}>
+                  See what is funded, committed, and instantly ready for the
+                  next run.
+                </Text>
+              </div>
               {!address && !isWalletPending ? (
                 <div className={styles.callout}>
                   <Icon.InfoCircle />
@@ -733,37 +763,81 @@ const Wallet = () => {
                   </div>
                 </div>
               ) : null}
-              <div className={styles.balanceRow}>
-                <Text as="span" size="md" className={styles.balanceLabel}>
-                  Escrow balance
-                </Text>
-                <Text as="span" size="lg" className={styles.balanceValue}>
-                  {balanceDisplay}
-                </Text>
+              <div className={styles.balanceSummary}>
+                <div className={styles.balancePrimary}>
+                  <span className={styles.balanceBadge}>Escrow balance</span>
+                  <Text
+                    as="span"
+                    size="lg"
+                    className={styles.balancePrimaryValue}
+                  >
+                    {balanceDisplay}
+                  </Text>
+                  <Text as="span" size="xs" className={styles.balanceHint}>
+                    Settled funds currently inside your prepaid vault.
+                  </Text>
+                </div>
+                <div className={styles.balanceAvailable}>
+                  <span className={styles.balanceBadgeMuted}>
+                    Available to run
+                  </span>
+                  <Text
+                    as="span"
+                    size="lg"
+                    className={styles.balanceAvailableValue}
+                  >
+                    {availableDisplay}
+                  </Text>
+                  {hasBalanceData ? (
+                    <div className={styles.balanceProgress}>
+                      <div className={styles.balanceProgressTrack}>
+                        <span
+                          className={styles.balanceProgressFill}
+                          style={{ width: `${availablePercent}%` }}
+                        />
+                      </div>
+                      <div className={styles.balanceProgressLegend}>
+                        <span>{availablePercent}% ready</span>
+                        <span>{committedPercent}% committed</span>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
               </div>
-              <div className={styles.balanceRow}>
-                <Text as="span" size="md" className={styles.balanceLabel}>
-                  Reserved for open runs
-                </Text>
-                <Text as="span" size="md" className={styles.balanceValue}>
-                  {formatCurrency(reservedBalance)}
-                </Text>
-              </div>
-              <div className={styles.balanceRow}>
-                <Text as="span" size="md" className={styles.balanceLabel}>
-                  Pending withdrawals
-                </Text>
-                <Text as="span" size="md" className={styles.balanceValue}>
-                  {formatCurrency(pendingWithdrawals)}
-                </Text>
-              </div>
-              <div className={styles.balanceRow}>
-                <Text as="span" size="md" className={styles.balanceLabel}>
-                  Available to run
-                </Text>
-                <Text as="span" size="lg" className={styles.balanceValue}>
-                  {availableDisplay}
-                </Text>
+              <div className={styles.balanceMetrics}>
+                <div className={styles.balanceMetric}>
+                  <span className={styles.balanceMetricLabel}>
+                    Reserved for open runs
+                  </span>
+                  <span className={styles.balanceMetricValue}>
+                    {formatCurrency(reservedBalance)}
+                  </span>
+                  <span className={styles.balanceMetricHint}>
+                    Held aside until active runs are completed.
+                  </span>
+                </div>
+                <div className={styles.balanceMetric}>
+                  <span className={styles.balanceMetricLabel}>
+                    Pending withdrawals
+                  </span>
+                  <span className={styles.balanceMetricValue}>
+                    {formatCurrency(pendingWithdrawals)}
+                  </span>
+                  <span className={styles.balanceMetricHint}>
+                    Awaiting signature before leaving escrow.
+                  </span>
+                </div>
+                <div className={styles.balanceMetric}>
+                  <span className={styles.balanceMetricLabel}>
+                    Committed total
+                  </span>
+                  <span className={styles.balanceMetricValue}>
+                    {formatCurrency(commitmentsBalance)}
+                  </span>
+                  <span className={styles.balanceMetricHint}>
+                    Combined reserved and pending amounts.
+                  </span>
+                </div>
               </div>
               {vaultBalanceError ? (
                 <Text

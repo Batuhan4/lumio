@@ -106,22 +106,160 @@
   color: #ffffff;
 }
 
-.balanceRow {
+.cardHeading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.balanceIntro {
+  color: rgba(196, 210, 255, 0.7);
+}
+
+.balanceSummary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.5rem;
+  align-items: stretch;
+}
+
+.balancePrimary,
+.balanceAvailable {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1.4rem 1.6rem;
+  border-radius: 1.25rem;
+  background:
+    radial-gradient(
+      circle at top right,
+      rgba(92, 108, 255, 0.28),
+      rgba(12, 18, 36, 0.82) 58%
+    ),
+    rgba(10, 16, 32, 0.85);
+  border: 1px solid rgba(120, 152, 255, 0.28);
+  box-shadow:
+    0 20px 36px rgba(6, 10, 24, 0.32),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.balanceAvailable {
+  background:
+    radial-gradient(
+      circle at top left,
+      rgba(65, 240, 192, 0.32),
+      rgba(12, 18, 36, 0.86) 60%
+    ),
+    rgba(8, 14, 28, 0.86);
+  border-color: rgba(92, 180, 255, 0.28);
+  box-shadow:
+    0 22px 40px rgba(6, 12, 26, 0.38),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.balancePrimaryValue,
+.balanceAvailableValue {
+  font-size: 1.85rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.98);
+}
+
+.balanceHint {
+  color: rgba(208, 220, 255, 0.7);
+}
+
+.balanceBadge,
+.balanceBadgeMuted {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.balanceBadge {
+  background: rgba(65, 240, 192, 0.18);
+  color: rgba(196, 255, 235, 0.92);
+  border: 1px solid rgba(65, 240, 192, 0.3);
+}
+
+.balanceBadgeMuted {
+  background: rgba(140, 158, 255, 0.18);
+  color: rgba(214, 224, 255, 0.9);
+  border: 1px solid rgba(140, 158, 255, 0.28);
+}
+
+.balanceProgress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin-top: 0.5rem;
+}
+
+.balanceProgressTrack {
+  width: 100%;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: rgba(20, 28, 48, 0.8);
+  overflow: hidden;
+}
+
+.balanceProgressFill {
+  display: block;
+  height: 100%;
+  background: linear-gradient(
+    135deg,
+    rgba(65, 240, 192, 0.85),
+    rgba(92, 108, 255, 0.85)
+  );
+  border-radius: 999px;
+  transition: width 220ms ease;
+}
+
+.balanceProgressLegend {
   display: flex;
   justify-content: space-between;
-  color: var(--lumio-text-muted);
-  font-size: 1.05rem;
-  gap: 0.75rem;
+  font-size: 0.75rem;
+  color: rgba(200, 212, 255, 0.72);
 }
 
-.balanceLabel {
-  font-weight: 500;
-  color: rgba(224, 234, 255, 0.8);
+.balanceMetrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
 }
 
-.balanceValue {
+.balanceMetric {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 1rem 1.15rem;
+  border-radius: 1.15rem;
+  background: rgba(12, 18, 36, 0.78);
+  border: 1px solid rgba(106, 122, 255, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(92, 108, 255, 0.08);
+}
+
+.balanceMetricLabel {
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(200, 210, 255, 0.6);
+}
+
+.balanceMetricValue {
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.96);
+  color: rgba(245, 248, 255, 0.95);
+  font-size: 1.1rem;
+}
+
+.balanceMetricHint {
+  font-size: 0.72rem;
+  color: rgba(188, 202, 235, 0.65);
 }
 
 .actions {
