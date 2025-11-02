@@ -90,20 +90,6 @@ Here’s how to experience the magic of Lumio with our hackathon demo:
 
 ---
 
-## 🎯 Project Scope (Hackathon MVP)
-
-This project is currently a **P0 (Hackathon MVP)**. Our goal is to deliver a working proof-of-concept demonstrating the core features.
-
-**Definition of Done:**
-
-- [ ] **Smart Contracts:** `AgentRegistry` and `PrepaidVault` deployed on a Stellar testnet.
-- [ ] **Runner Service:** A live runner that can execute jobs and finalize them on-chain.
-- [ ] **Web UI:** A functional frontend to browse agents, run them, and view policies/history.
-- [ ] **Indexer:** A service to display recent run history.
-- [ ] **Documentation:** This README and a demo script.
-
----
-
 ## 🔭 The Future of Lumio (Roadmap)
 
 We're just getting started! Here's what we're dreaming of for P1 and beyond:
