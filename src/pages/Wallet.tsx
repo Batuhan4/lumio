@@ -976,25 +976,23 @@ const Wallet = () => {
                     onChange={() => setIsPaused((prev) => !prev)}
                     iconChecked={<Icon.PauseCircle />}
                     iconUnchecked={<Icon.PlayCircle />}
+                    title={
+                      isPaused ? "Resume accepting new runs" : "Pause new runs"
+                    }
                   />
                 </div>
                 <div className={styles.pauseCopy}>
-                  <Text as="span" size="sm">
-                    {isPaused ? "Account paused" : "Account active"}
+                  <Text as="span" size="xs" className={styles.pauseLabel}>
+                    Run intake
+                  </Text>
+                  <Text as="span" size="md" className={styles.pauseState}>
+                    {isPaused ? "Paused for new runs" : "Accepting new runs"}
                   </Text>
                   <Text as="span" size="xs" className={styles.pauseHint}>
                     Toggle anytime — changes apply immediately for new runs.
                   </Text>
                 </div>
               </div>
-              <Button
-                variant={isPaused ? "primary" : "tertiary"}
-                size="md"
-                disabled={!isPaused}
-                className={styles.fullWidthButton}
-              >
-                Resume runs
-              </Button>
             </div>
           </div>
 

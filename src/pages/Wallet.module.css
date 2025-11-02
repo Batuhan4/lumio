@@ -566,29 +566,116 @@
 
 .pauseControls {
   display: flex;
-  gap: 1.25rem;
+  gap: 1.5rem;
   align-items: center;
-  padding: 1rem;
-  border-radius: 1.1rem;
-  background: rgba(12, 18, 36, 0.72);
-  border: 1px solid rgba(106, 122, 255, 0.16);
+  padding: 1rem 1.25rem;
+  border-radius: 1.25rem;
+  background: linear-gradient(
+    135deg,
+    rgba(26, 34, 72, 0.92),
+    rgba(8, 14, 32, 0.78)
+  );
+  border: 1px solid rgba(106, 122, 255, 0.24);
+  box-shadow: 0 18px 40px rgba(8, 16, 40, 0.48);
+  backdrop-filter: blur(18px);
 }
 
 .pauseToggle {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0.35rem;
+  border-radius: 999px;
+  background: rgba(64, 80, 180, 0.18);
+  border: 1px solid rgba(122, 138, 255, 0.26);
+  box-shadow: 0 14px 36px rgba(20, 30, 80, 0.45);
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background 160ms ease;
+}
+
+.pauseToggle :global(.Toggle__track) {
+  width: 3.5rem;
+  height: 2.1rem;
+  border-radius: 999px;
+  background: rgba(34, 42, 88, 0.9);
+  border: 1px solid rgba(124, 142, 255, 0.32);
+  padding: 0.25rem;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  transition:
+    background 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.pauseToggle :global(.Toggle__track__thumb) {
+  display: grid;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 50%;
+  background: linear-gradient(
+    135deg,
+    rgba(134, 152, 255, 0.92),
+    rgba(94, 110, 255, 0.72)
+  );
+  border: 1px solid rgba(188, 198, 255, 0.45);
+  box-shadow: 0 14px 28px rgba(16, 26, 68, 0.62);
+  transition:
+    background 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.pauseToggle :global(.Toggle__track__icon) {
+  color: rgba(236, 242, 255, 0.92);
+  font-size: 1.05rem;
+}
+
+.pauseToggle :global(.Toggle__input:focus-visible + .Toggle__track) {
+  outline: 2px solid rgba(178, 188, 255, 0.75);
+  outline-offset: 3px;
+}
+
+.pauseToggle :global(.Toggle__input:checked + .Toggle__track) {
+  background: rgba(74, 86, 200, 0.5);
+  border-color: rgba(146, 160, 255, 0.52);
+  box-shadow: 0 18px 32px rgba(48, 62, 158, 0.55);
+}
+
+.pauseToggle
+  :global(.Toggle__input:checked + .Toggle__track .Toggle__track__thumb) {
+  background: linear-gradient(
+    135deg,
+    rgba(182, 192, 255, 0.96),
+    rgba(84, 102, 255, 0.9)
+  );
+  border-color: rgba(214, 220, 255, 0.6);
+  box-shadow: 0 20px 34px rgba(60, 74, 192, 0.6);
 }
 
 .pauseCopy {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  color: var(--lumio-text-muted);
+  gap: 0.4rem;
+}
+
+.pauseLabel {
+  font-size: 0.75rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(214, 224, 255, 0.62);
+}
+
+.pauseState {
+  color: var(--lumio-text-primary);
+  font-weight: 600;
+  font-size: 0.95rem;
 }
 
 .pauseHint {
-  color: rgba(214, 224, 255, 0.6);
+  color: rgba(214, 224, 255, 0.62);
 }
 
 .depositForm {
@@ -839,11 +926,6 @@
   background: rgba(5, 9, 18, 0.72);
 }
 
-.fullWidthButton {
-  width: 100%;
-  margin-top: 0.5rem;
-}
-
 @media (max-width: 720px) {
   .heading {
     flex-direction: column;
@@ -906,10 +988,11 @@
   .pauseControls {
     flex-direction: column;
     align-items: stretch;
+    gap: 1rem;
   }
 
   .pauseToggle {
-    justify-content: flex-start;
+    align-self: flex-start;
   }
 }
 
