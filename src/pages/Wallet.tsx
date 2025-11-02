@@ -13,6 +13,7 @@ import { useWallet } from "../hooks/useWallet";
 import { useWalletBalance } from "../hooks/useWalletBalance";
 import { useVaultBalance } from "../hooks/useVaultBalance";
 import { useNotification } from "../hooks/useNotification";
+import { useSmartWallet } from "../hooks/useSmartWallet";
 import {
   contractUnitsToNumber,
   parseAmountToContractUnits,
@@ -47,6 +48,7 @@ const Wallet = () => {
     networkPassphrase: walletNetworkPassphrase,
   } = useWallet();
   const { addNotification } = useNotification();
+  const { refresh: refreshSmartWallet } = useSmartWallet();
   const {
     balance: vaultBalance,
     isLoading: isVaultBalanceLoading,
@@ -182,7 +184,10 @@ const Wallet = () => {
           walletNetworkPassphrase ?? defaultNetworkPassphrase ?? "";
         await tx.signAuthEntries({
           address,
-          signAuthEntry: (authEntry, opts) =>
+          signAuthEntry: (
+            authEntry: Parameters<NonNullable<typeof signAuthEntryFn>>[0],
+            opts: Parameters<NonNullable<typeof signAuthEntryFn>>[1],
+          ) =>
             signAuthEntryFn(authEntry, {
               ...opts,
               address,
@@ -192,7 +197,10 @@ const Wallet = () => {
       }
 
       await tx.signAndSend({
-        signTransaction: (xdr, opts) =>
+        signTransaction: (
+          xdr: Parameters<NonNullable<typeof signTransactionFn>>[0],
+          opts: Parameters<NonNullable<typeof signTransactionFn>>[1],
+        ) =>
           signTransactionFn(xdr, {
             ...opts,
             address,
@@ -210,6 +218,7 @@ const Wallet = () => {
         "success",
       );
       await refreshVaultBalance();
+      await refreshSmartWallet();
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Deposit failed.";
@@ -280,7 +289,10 @@ const Wallet = () => {
           walletNetworkPassphrase ?? defaultNetworkPassphrase ?? "";
         await tx.signAuthEntries({
           address,
-          signAuthEntry: (authEntry, opts) =>
+          signAuthEntry: (
+            authEntry: Parameters<NonNullable<typeof signAuthEntryFn>>[0],
+            opts: Parameters<NonNullable<typeof signAuthEntryFn>>[1],
+          ) =>
             signAuthEntryFn(authEntry, {
               ...opts,
               address,
@@ -290,7 +302,10 @@ const Wallet = () => {
       }
 
       await tx.signAndSend({
-        signTransaction: (xdr, opts) =>
+        signTransaction: (
+          xdr: Parameters<NonNullable<typeof signTransactionFn>>[0],
+          opts: Parameters<NonNullable<typeof signTransactionFn>>[1],
+        ) =>
           signTransactionFn(xdr, {
             ...opts,
             address,
@@ -307,6 +322,7 @@ const Wallet = () => {
         "success",
       );
       await refreshVaultBalance();
+      await refreshSmartWallet();
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Withdrawal failed.";

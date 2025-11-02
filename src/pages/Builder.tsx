@@ -11,6 +11,7 @@ import {
   Icon,
   Input,
   Layout,
+  Modal,
   Select,
   Text,
   Textarea,
@@ -27,7 +28,9 @@ import { executeHttpRequest } from "../services/http";
 import type { HttpRequestExecution } from "../services/http";
 import { interpolateTemplate } from "../util/templates";
 import { useGeminiApiKey } from "../hooks/useGeminiApiKey";
+import { useNotification } from "../hooks/useNotification";
 import { useWallet } from "../hooks/useWallet";
+import { useSmartWallet } from "../hooks/useSmartWallet";
 import {
   DEFAULT_HTTP_CONFIG,
   DEFAULT_STELLAR_ACCOUNT_CONFIG,
@@ -46,6 +49,14 @@ import type {
   WorkflowNodeKind,
 } from "../types/workflows";
 import { fetchStellarAccount } from "../services/stellarAccount";
+import {
+  computeUsageCharge,
+  createEmptyUsage,
+  DEFAULT_RATE_CARD,
+  PLATFORM_FEE,
+  type AgentUsage,
+} from "../util/pricing";
+import { formatCurrency, formatRelativeDate } from "../util/format";
 import styles from "./Builder.module.css";
 
 const GRID_SIZE = 48;
@@ -140,6 +151,82 @@ type WorkflowRunStepSummary = {
   title: string;
   status: "success" | "error" | "skipped";
   detail?: string;
+};
+
+type WorkflowRunResultEntry = {
+  nodeId: string;
+  title: string;
+  status: WorkflowRunStepSummary["status"];
+  detail?: string;
+  outputs: Record<string, string>;
+};
+
+type WorkflowRunResult = {
+  executedAt: string;
+  runType: "preview" | "run";
+  workflowLabel: string;
+  entries: WorkflowRunResultEntry[];
+};
+
+const formatOutputLabel = (key: string) => {
+  const suffix = key.split(".").pop() ?? key;
+  switch (suffix) {
+    case "output_text":
+      return "Gemini output";
+    case "output_json":
+      return "Gemini JSON";
+    case "status":
+      return "HTTP status";
+    case "body_text":
+      return "HTTP body";
+    case "body_json":
+      return "HTTP JSON";
+    case "wallet_json":
+      return "Wallet snapshot";
+    case "balances_json":
+      return "Balances";
+    case "payments_json":
+      return "Payments";
+    default:
+      return suffix.replace(/_/g, " ");
+  }
+};
+
+const GEMINI_DEFAULT_INPUT_PLACEHOLDER =
+  "Lumio escrows the max charge for each agent run, then refunds the unused amount automatically.";
+
+const DEFAULT_WALLET_SYSTEM_PROMPT = `
+You are Lumio's financial co-pilot. Analyse Stellar wallet telemetry and respond as a pragmatic portfolio strategist.
+- Read balances, asset types and liabilities.
+- Review payments to detect inflows/outflows, cadence, and counterparties.
+- Surface risk signals and liquidity warnings.
+- Recommend a diversified basket across XLM, stablecoins, and two speculative tokens; justify with wallet context and macros.
+- ALWAYS end with three concrete next actions and a confidence score (0-100).
+Stay concise (<= 220 words) but data-backed.`;
+
+const WALLET_ANALYSIS_GUIDE = `
+Respond using the following structure:
+Overview: concise narrative on solvency and runway.
+Balances & Positions: bullet list with token, amount, % share, and notes.
+Recent Activity: key payments or trends detected.
+Suggested Basket: table-like list with asset, target %, rationale.
+Actions: three numbered tasks.
+Confidence: integer 0-100.
+`;
+
+const snapshotFromPreview = (
+  preview: StellarAccountNodeConfig["lastPreview"],
+) => {
+  if (!preview) {
+    return "";
+  }
+  return safeStringify({
+    accountId: preview.accountId,
+    network: preview.network,
+    horizonUrl: preview.horizonUrl,
+    balances: preview.balances ?? [],
+    payments: preview.payments ?? [],
+  });
 };
 
 const snapPosition = ({ x, y }: { x: number; y: number }) => ({
@@ -561,8 +648,20 @@ const Builder = () => {
       : null;
   const nodes = activeWorkflow?.nodes ?? EMPTY_NODES;
   const connections = activeWorkflow?.connections ?? EMPTY_CONNECTIONS;
-  const { apiKey: geminiApiKey } = useGeminiApiKey();
+  const {
+    apiKey: geminiApiKey,
+    persistedKey: geminiStoredKey,
+    setApiKey: persistGeminiKey,
+    clearApiKey: removeGeminiKey,
+  } = useGeminiApiKey();
   const { address: walletAddress } = useWallet();
+  const { balance: smartWalletBalance, deduct: deductFromSmartWallet } =
+    useSmartWallet();
+  const { addNotification } = useNotification();
+  const [isGeminiKeyModalOpen, setGeminiKeyModalOpen] = useState(false);
+  const [geminiKeyDraft, setGeminiKeyDraft] = useState(
+    () => geminiStoredKey ?? "",
+  );
 
   const updateActiveWorkflow = useCallback(
     (
@@ -1367,6 +1466,12 @@ const Builder = () => {
   const [workflowRunLabel, setWorkflowRunLabel] = useState<
     "preview" | "run" | null
   >(null);
+  const [latestRunResult, setLatestRunResult] =
+    useState<WorkflowRunResult | null>(null);
+  const [isResultModalOpen, setResultModalOpen] = useState(false);
+  useEffect(() => {
+    setGeminiKeyDraft(geminiStoredKey ?? "");
+  }, [geminiStoredKey]);
 
   const workflowRunStats = useMemo(() => {
     if (workflowRunSummary.length === 0) {
@@ -1390,6 +1495,24 @@ const Builder = () => {
     setWorkflowRunLabel(null);
   }, []);
 
+  const handleSaveGeminiKey = useCallback(() => {
+    const trimmed = geminiKeyDraft.trim();
+    if (!trimmed) {
+      addNotification("Enter a Gemini API key before saving.", "warning");
+      return;
+    }
+    persistGeminiKey(trimmed);
+    addNotification("Gemini API key saved.", "success");
+    setGeminiKeyModalOpen(false);
+  }, [geminiKeyDraft, persistGeminiKey, addNotification]);
+
+  const handleClearGeminiKey = useCallback(() => {
+    removeGeminiKey();
+    setGeminiKeyDraft("");
+    addNotification("Gemini API key cleared.", "secondary");
+    setGeminiKeyModalOpen(false);
+  }, [removeGeminiKey, addNotification]);
+
   const runWorkflow = useCallback(
     async (label: "preview" | "run") => {
       if (!activeWorkflow) {
@@ -1404,6 +1527,7 @@ const Builder = () => {
       }
 
       cancelPendingConnection();
+      setResultModalOpen(false);
       setWorkflowRunLabel(label);
       setWorkflowRunError(null);
       setWorkflowRunSummary([]);
@@ -1459,6 +1583,7 @@ const Builder = () => {
 
         const outputs = new Map<string, Record<string, string>>();
         const summary: WorkflowRunStepSummary[] = [];
+        const usageTotals: AgentUsage = createEmptyUsage();
         let encounteredError = false;
 
         const collectUpstream = (nodeId: string) => {
@@ -1682,6 +1807,15 @@ const Builder = () => {
                 status: result.error ? "error" : "success",
                 detail: result.error?.message ?? "Request executed",
               });
+              if (result.response) {
+                usageTotals.httpCalls += 1;
+                if (typeof result.response.durationMs === "number") {
+                  usageTotals.runtimeMs += Math.max(
+                    0,
+                    Math.round(result.response.durationMs),
+                  );
+                }
+              }
 
               if (result.error && !encounteredError) {
                 encounteredError = true;
@@ -1706,39 +1840,141 @@ const Builder = () => {
 
           if (node.kind === "gemini") {
             if (!geminiApiKey) {
-              const message =
-                "Set VITE_GEMINI_API_KEY (for example in .env.local) before running Gemini nodes.";
-              encounteredError = true;
+              const fallbackText =
+                "Simulated Gemini output. Add VITE_GEMINI_API_KEY to run live.";
+              const executedAt = new Date().toISOString();
+              updateGeminiConfig(
+                node.id,
+                (existing) => ({
+                  ...existing,
+                  lastPreview: {
+                    executedAt,
+                    outputText: fallbackText,
+                    responseMimeType: existing.responseMimeType,
+                    usage: {
+                      promptTokens: 0,
+                      responseTokens: fallbackText.length,
+                      totalTokens: fallbackText.length,
+                    },
+                  },
+                }),
+                { resetPreview: false },
+              );
+
+              outputs.set(node.id, {
+                [`${node.id}.output_text`]: fallbackText,
+                ...(node.config.responseMimeType === "application/json"
+                  ? { [`${node.id}.output_json`]: fallbackText }
+                  : {}),
+              });
+
               summary.push({
                 nodeId: node.id,
                 title: node.title,
-                status: "error",
-                detail: message,
+                status: "success",
+                detail: "Simulated Gemini output (API key missing)",
               });
-              setWorkflowRunError(message);
-              break;
+              addNotification(
+                "Simulated Gemini output — configure VITE_GEMINI_API_KEY for live calls.",
+                "warning",
+              );
+              usageTotals.llmOutTokens += fallbackText.length;
+              continue;
             }
 
             const config = node.config as GeminiNodeConfig;
             const upstream = collectUpstream(node.id);
             const variableValues = { ...config.testInputs, ...upstream };
+            const directWalletContext =
+              typeof upstream.wallet_json === "string"
+                ? upstream.wallet_json.trim()
+                : "";
+            const fallbackWalletContext = () => {
+              for (const valueMap of outputs.values()) {
+                if (typeof valueMap.wallet_json === "string") {
+                  const trimmed = valueMap.wallet_json.trim();
+                  if (trimmed.length > 0) {
+                    return trimmed;
+                  }
+                }
+                for (const [outputKey, outputValue] of Object.entries(
+                  valueMap,
+                )) {
+                  if (
+                    outputKey.endsWith(".wallet_json") &&
+                    typeof outputValue === "string"
+                  ) {
+                    const trimmed = outputValue.trim();
+                    if (trimmed.length > 0) {
+                      return trimmed;
+                    }
+                  }
+                }
+              }
+              for (const candidate of workflowNodes) {
+                if (candidate.kind === "stellar-account") {
+                  const previewSnapshot = snapshotFromPreview(
+                    (candidate.config as StellarAccountNodeConfig).lastPreview,
+                  );
+                  if (previewSnapshot.length > 0) {
+                    return previewSnapshot;
+                  }
+                }
+              }
+              return "";
+            };
+            const walletContext =
+              directWalletContext.length > 0
+                ? directWalletContext
+                : fallbackWalletContext();
             config.inputVariables.forEach((variable) => {
               if (!(variable in variableValues)) {
                 variableValues[variable] = config.testInputs[variable] ?? "";
               }
             });
+            const variableInputValue =
+              typeof variableValues.input === "string"
+                ? variableValues.input.trim()
+                : "";
+            const defaultInputPlaceholder = (
+              config.testInputs.input ?? GEMINI_DEFAULT_INPUT_PLACEHOLDER
+            ).trim();
+            if (
+              walletContext.length > 0 &&
+              (variableInputValue.length === 0 ||
+                variableInputValue === defaultInputPlaceholder)
+            ) {
+              variableValues.input = walletContext;
+            }
+            if (walletContext.length > 0 && !variableValues.wallet_json) {
+              variableValues.wallet_json = walletContext;
+            }
 
             const compiledPrompt = interpolateTemplate(
               config.promptTemplate,
               variableValues,
             );
+            const shouldAppendWalletContext =
+              walletContext.length > 0 &&
+              !compiledPrompt.includes(walletContext);
+            const walletAnalysisCue = `
+Provide an actionable financial summary that references concrete balances, recent payments, and budget health. Highlight risk areas, spending trends, and suggested next steps.`;
+            const finalPrompt = shouldAppendWalletContext
+              ? `${compiledPrompt.trim()}\n\nWallet data (JSON):\n${walletContext}\n${walletAnalysisCue.trim()}`
+              : compiledPrompt;
+            const walletContextMissing = walletContext.length === 0;
+            const finalSystemInstruction =
+              walletContext.length > 0 &&
+              (config.systemInstruction ?? "").trim().length === 0
+                ? DEFAULT_WALLET_SYSTEM_PROMPT.trim()
+                : config.systemInstruction;
 
             try {
               const { text, usage } = await generateGeminiText({
                 apiKey: geminiApiKey,
                 model: config.model,
-                prompt: compiledPrompt,
-                systemInstruction: config.systemInstruction,
+                prompt: `${finalPrompt.trim()}\n\n${WALLET_ANALYSIS_GUIDE.trim()}`,
+                systemInstruction: finalSystemInstruction,
                 temperature: config.temperature,
                 topP: config.topP,
                 topK: config.topK,
@@ -1762,6 +1998,7 @@ const Builder = () => {
 
               const trimmedText = text.trim();
               const payload: Record<string, string> = {
+                [`${node.id}.prompt_text`]: finalPrompt,
                 [`${node.id}.output_text`]: trimmedText,
               };
               if (config.responseMimeType === "application/json") {
@@ -1773,8 +2010,16 @@ const Builder = () => {
                 nodeId: node.id,
                 title: node.title,
                 status: "success",
-                detail: `Generated ${trimmedText.length} characters`,
+                detail: walletContextMissing
+                  ? `Generated ${trimmedText.length} characters (wallet data missing)`
+                  : `Generated ${trimmedText.length} characters`,
               });
+              if (usage?.promptTokens) {
+                usageTotals.llmInTokens += Math.max(0, usage.promptTokens);
+              }
+              if (usage?.responseTokens) {
+                usageTotals.llmOutTokens += Math.max(0, usage.responseTokens);
+              }
             } catch (error) {
               const message =
                 error instanceof Error
@@ -1803,6 +2048,63 @@ const Builder = () => {
 
         setWorkflowRunSummary(summary);
         if (!encounteredError) {
+          const summaryByNode = new Map(
+            summary.map((item) => [item.nodeId, item]),
+          );
+          const resultEntries = order
+            .map((node) => {
+              const payload = outputs.get(node.id) ?? {};
+              const entry = summaryByNode.get(node.id);
+              return {
+                nodeId: node.id,
+                title: node.title,
+                status: entry?.status ?? "skipped",
+                detail: entry?.detail,
+                outputs: payload,
+              };
+            })
+            .filter(
+              (entry) =>
+                Object.keys(entry.outputs).length > 0 ||
+                (entry.detail && entry.detail.trim().length > 0),
+            );
+
+          setLatestRunResult({
+            executedAt: new Date().toISOString(),
+            runType: label,
+            workflowLabel: activeWorkflow?.label ?? "Untitled workflow",
+            entries: resultEntries,
+          });
+          setResultModalOpen(true);
+
+          const usageCharge = computeUsageCharge(
+            usageTotals,
+            DEFAULT_RATE_CARD,
+          );
+          const totalCharge = Math.max(0, PLATFORM_FEE + usageCharge);
+          if (totalCharge > 0) {
+            const deduction = deductFromSmartWallet(totalCharge, {
+              label: activeWorkflow?.label ?? "Workflow run",
+              runType: label,
+              usage: usageTotals,
+            });
+            if (deduction.applied > 0) {
+              const actionLabel = label === "run" ? "Run" : "Preview";
+              const baseMessage = `${actionLabel} charged ${formatCurrency(deduction.applied)} (includes ${formatCurrency(PLATFORM_FEE)} platform fee).`;
+              const balanceMessage = deduction.insufficient
+                ? "Smart wallet balance exhausted."
+                : `New balance: ${formatCurrency(deduction.balance)}.`;
+              addNotification(
+                `${baseMessage} ${balanceMessage}`,
+                deduction.insufficient ? "warning" : "success",
+              );
+            } else if (!deduction.ok) {
+              addNotification(
+                "Unable to charge smart wallet for this run.",
+                "error",
+              );
+            }
+          }
           setWorkflowRunError(null);
         }
       } finally {
@@ -1812,8 +2114,10 @@ const Builder = () => {
     [
       activeWorkflow,
       cancelPendingConnection,
+      deductFromSmartWallet,
       geminiApiKey,
       isWorkflowRunning,
+      addNotification,
       updateGeminiConfig,
       updateHttpConfig,
       updateStellarConfig,
@@ -2582,6 +2886,34 @@ const Builder = () => {
               </Text>
             </div>
             <div className={styles.headerActions}>
+              <div
+                className={styles.walletIndicator}
+                title="Smart wallet balance"
+              >
+                <Icon.Wallet02 size="sm" />
+                <span>Smart wallet</span>
+                <strong>{formatCurrency(smartWalletBalance)}</strong>
+              </div>
+              <Button
+                variant="tertiary"
+                size="md"
+                onClick={() => setGeminiKeyModalOpen(true)}
+                disabled={isWorkflowRunning}
+              >
+                <Icon.Key01 size="sm" />
+                Gemini API key
+              </Button>
+              {latestRunResult ? (
+                <Button
+                  variant="secondary"
+                  size="md"
+                  onClick={() => setResultModalOpen(true)}
+                  disabled={isWorkflowRunning}
+                >
+                  <Icon.Receipt size="sm" />
+                  View result
+                </Button>
+              ) : null}
               <Button
                 variant="tertiary"
                 size="md"
@@ -4064,6 +4396,124 @@ const Builder = () => {
             </aside>
           </section>
         </div>
+        <Modal
+          visible={isGeminiKeyModalOpen}
+          onClose={() => setGeminiKeyModalOpen(false)}
+        >
+          <Modal.Heading>Gemini API key</Modal.Heading>
+          <Modal.Body>
+            <Text as="p" size="sm">
+              Paste your Gemini API key to enable live model calls. The key is
+              stored locally in your browser only.
+            </Text>
+            <Input
+              id="gemini-api-key"
+              fieldSize="md"
+              label="API key"
+              type="password"
+              value={geminiKeyDraft}
+              onChange={(event) => setGeminiKeyDraft(event.currentTarget.value)}
+              placeholder="AIza..."
+            />
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="primary" size="md" onClick={handleSaveGeminiKey}>
+              Save key
+            </Button>
+            <Button
+              variant="tertiary"
+              size="md"
+              onClick={handleClearGeminiKey}
+              disabled={!geminiStoredKey}
+            >
+              Clear
+            </Button>
+          </Modal.Footer>
+        </Modal>
+        {latestRunResult && isResultModalOpen ? (
+          <div
+            className={styles.resultOverlay}
+            role="dialog"
+            aria-modal="true"
+            onClick={() => setResultModalOpen(false)}
+          >
+            <div
+              className={styles.resultCard}
+              onClick={(event) => {
+                event.stopPropagation();
+              }}
+            >
+              <div className={styles.resultHeader}>
+                <div>
+                  <Text as="h2" size="sm" className={styles.resultLabel}>
+                    {latestRunResult.runType === "run"
+                      ? "Workflow run"
+                      : "Preview run"}
+                  </Text>
+                  <Text as="p" size="xs" className={styles.resultMeta}>
+                    {formatRelativeDate(latestRunResult.executedAt)} ·{" "}
+                    {latestRunResult.workflowLabel}
+                  </Text>
+                </div>
+                <Button
+                  variant="tertiary"
+                  size="sm"
+                  onClick={() => setResultModalOpen(false)}
+                >
+                  <Icon.X size="sm" />
+                  Close
+                </Button>
+              </div>
+              <div className={styles.resultBody}>
+                {latestRunResult.entries.length === 0 ? (
+                  <Text as="p" size="sm" className={styles.resultEmpty}>
+                    This run did not emit any outputs. Try wiring nodes or
+                    enabling previews.
+                  </Text>
+                ) : (
+                  latestRunResult.entries.map((entry) => (
+                    <div key={entry.nodeId} className={styles.resultNode}>
+                      <div className={styles.resultNodeHeader}>
+                        <Text as="h3" size="sm">
+                          {entry.title}
+                        </Text>
+                        <span
+                          className={styles.resultStatus}
+                          data-status={entry.status}
+                        >
+                          {entry.status === "success"
+                            ? "Success"
+                            : entry.status === "error"
+                              ? "Error"
+                              : "Skipped"}
+                        </span>
+                      </div>
+                      {entry.detail ? (
+                        <Text as="p" size="xs" className={styles.resultDetail}>
+                          {entry.detail}
+                        </Text>
+                      ) : null}
+                      {Object.entries(entry.outputs).map(([key, value]) => (
+                        <div key={key} className={styles.resultOutput}>
+                          <Text
+                            as="p"
+                            size="xs"
+                            className={styles.resultOutputKey}
+                          >
+                            {formatOutputLabel(key)}
+                          </Text>
+                          <pre className={styles.resultOutputValue}>
+                            {value}
+                          </pre>
+                        </div>
+                      ))}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        ) : null}
       </Layout.Inset>
     </Layout.Content>
   );

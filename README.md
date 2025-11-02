@@ -39,6 +39,7 @@ It's that simple. All verifiable on-chain.
 - ✅ **1-Click Runs:** A simple, beautiful interface to execute powerful AI agents.
 - 💰 **Visible Max Charge:** Know the most you could possibly spend _before_ you commit.
 - 🔄 **Automatic Refunds:** No need to claim or wait. Unused funds are sent back to your wallet automatically.
+- 💵 **Predictable Platform Fee:** Every preview or run includes a fixed **USDC 0.01** Lumio fee, so operating costs stay transparent.
 - 📈 **Full Audit Trail:** Every run, payment, and refund is a transaction on the Stellar ledger.
 - 🗓️ **Scheduling:** Set agents to run on a schedule (e.g., hourly, daily) with daily spending caps for full control.
 
@@ -62,12 +63,26 @@ Lumio is built with a modern, robust, and decentralized technology stack:
 
 ---
 
+## 💸 Pricing Model
+
+- **Platform fee:** Every preview or full run deducts a flat **USDC 0.01** from the smart wallet before usage-based charges are applied.
+- **Token metering:** We translate Gemini usage into USDC with midpoint rates derived from current public pricing:
+  - Input tokens (text/image/video): **USDC 0.125 per 1M tokens**.
+  - Output tokens (standard response mode): **USDC 0.50 per 1M tokens**.
+  - HTTP calls and runtime meters retain their default rate card values for the MVP.
+- **Automatic refunds:** If a run settles below its escrowed Max Charge, the difference is returned immediately—platform fees excluded.
+
+This mirrors what the frontend enforces: smart wallet deductions equal `platform fee + metered usage`, ensuring even dry-run previews reflect real operating costs.
+
+---
+
 ## 🎬 Live Demo Walkthrough
 
 Here’s how to experience the magic of Lumio with our hackathon demo:
 
 1.  **Deposit:** Add some testnet USDC to your wallet.
 2.  **Run Once:** Choose the "Web Summarizer" agent, approve the **Max Charge**, and run it.
+    - Want live Gemini responses? Click **Gemini API key** in the Builder header and paste your key before running.
 3.  **See the Refund:** Check your run history. You'll see the `Actual Cost` and the `Refund` you automatically received!
 4.  **Enable a Schedule:** Find the "RSS Digest" agent and set it to run hourly with a daily cap.
 5.  **Pause It:** Go to your policy screen and hit "Pause." All scheduled and new runs will be stopped until you resume.

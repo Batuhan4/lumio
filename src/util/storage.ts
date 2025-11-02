@@ -11,6 +11,7 @@
  * see a list of valid storage keys while using this module elsewhere.
  */
 import type { WorkflowDraftState } from "../types/workflows";
+import type { SmartWalletPersistence } from "../types/smartWallet";
 
 type Schema = {
   walletId: string;
@@ -19,6 +20,7 @@ type Schema = {
   networkPassphrase: string;
   geminiApiKey: string;
   workflowDrafts: WorkflowDraftState;
+  smartWallet: SmartWalletPersistence;
 };
 
 /**

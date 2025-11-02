@@ -23,6 +23,163 @@
   display: flex;
   gap: 0.75rem;
   flex-wrap: wrap;
+  align-items: center;
+}
+
+.walletIndicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid rgba(155, 92, 255, 0.32);
+  background: rgba(18, 2, 60, 0.6);
+  color: rgba(231, 236, 255, 0.92);
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.walletIndicator span {
+  font-weight: 500;
+  color: rgba(214, 224, 255, 0.8);
+}
+
+.walletIndicator strong {
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.walletIndicator svg {
+  color: rgba(155, 92, 255, 0.9);
+}
+
+.resultOverlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: rgba(8, 0, 28, 0.72);
+  backdrop-filter: blur(18px);
+  z-index: 1000;
+}
+
+.resultCard {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  width: min(720px, 100%);
+  max-height: min(85vh, 720px);
+  padding: 1.75rem;
+  border-radius: 1.5rem;
+  background:
+    linear-gradient(155deg, rgba(44, 9, 110, 0.86), rgba(16, 4, 60, 0.82)),
+    rgba(12, 2, 44, 0.88);
+  border: 1px solid rgba(155, 92, 255, 0.35);
+  box-shadow: 0 38px 90px rgba(20, 5, 60, 0.65);
+  overflow: hidden;
+}
+
+.resultHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.resultLabel {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: rgba(214, 224, 255, 0.72);
+}
+
+.resultMeta {
+  color: rgba(214, 224, 255, 0.65);
+}
+
+.resultBody {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  overflow-y: auto;
+  padding-right: 0.5rem;
+}
+
+.resultEmpty {
+  color: rgba(214, 224, 255, 0.72);
+  text-align: center;
+}
+
+.resultNode {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
+  border-radius: 1rem;
+  background: rgba(12, 2, 44, 0.65);
+  border: 1px solid rgba(155, 92, 255, 0.2);
+}
+
+.resultNodeHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.resultStatus {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.resultStatus[data-status="success"] {
+  color: rgba(102, 255, 210, 0.92);
+  border-color: rgba(102, 255, 210, 0.45);
+}
+
+.resultStatus[data-status="error"] {
+  color: rgba(255, 156, 132, 0.95);
+  border-color: rgba(255, 156, 132, 0.45);
+}
+
+.resultStatus[data-status="skipped"] {
+  color: rgba(214, 224, 255, 0.55);
+  border-color: rgba(214, 224, 255, 0.25);
+}
+
+.resultDetail {
+  color: rgba(214, 224, 255, 0.7);
+}
+
+.resultOutput {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.resultOutputKey {
+  font-weight: 600;
+  color: rgba(214, 224, 255, 0.75);
+}
+
+.resultOutputValue {
+  margin: 0;
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  background: rgba(8, 0, 30, 0.72);
+  border: 1px solid rgba(155, 92, 255, 0.2);
+  color: rgba(231, 236, 255, 0.92);
+  font-size: 0.75rem;
+  max-height: 180px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .runBanner,
