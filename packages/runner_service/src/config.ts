@@ -80,7 +80,15 @@ export const loadConfig = (): RunnerConfig => {
   };
 
   const parsed = envSchema.parse(raw);
-  const runnerKeypair = Keypair.fromSecret(parsed.runnerSecret);
+  let runnerKeypair: Keypair;
+  try {
+    runnerKeypair = Keypair.fromSecret(parsed.runnerSecret);
+  } catch (error) {
+    throw new Error(
+      "Runner configuration failed: RUNNER_SECRET must be a valid Ed25519 secret seed.",
+      { cause: error },
+    );
+  }
 
   if (!parsed.contractId) {
     throw new Error(
