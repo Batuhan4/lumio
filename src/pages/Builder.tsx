@@ -145,6 +145,33 @@ const snapPosition = ({ x, y }: { x: number; y: number }) => ({
   y: Math.round(y / GRID_SIZE) * GRID_SIZE,
 });
 
+const getNodeCenter = (node: WorkflowNode) => ({
+  x: node.position.x + NODE_WIDTH / 2,
+  y: node.position.y + NODE_HEIGHT / 2,
+});
+
+const getNodeEdgePoint = (
+  node: WorkflowNode,
+  towardPoint: { x: number; y: number },
+) => {
+  const center = getNodeCenter(node);
+  const dx = towardPoint.x - center.x;
+  const dy = towardPoint.y - center.y;
+  if (dx === 0 && dy === 0) {
+    return center;
+  }
+  const halfWidth = NODE_WIDTH / 2;
+  const halfHeight = NODE_HEIGHT / 2;
+  const scaleX = dx === 0 ? Number.POSITIVE_INFINITY : halfWidth / Math.abs(dx);
+  const scaleY =
+    dy === 0 ? Number.POSITIVE_INFINITY : halfHeight / Math.abs(dy);
+  const scale = Math.min(scaleX, scaleY);
+  return {
+    x: center.x + dx * scale,
+    y: center.y + dy * scale,
+  };
+};
+
 const safeStringify = (value: unknown) => {
   try {
     return JSON.stringify(value, null, 2);
@@ -2178,50 +2205,11 @@ const Builder = () => {
           return null;
         }
 
-        const fromCenter = {
-          x: fromNode.position.x + NODE_WIDTH / 2,
-          y: fromNode.position.y + NODE_HEIGHT / 2,
-        };
-        const toCenter = {
-          x: toNode.position.x + NODE_WIDTH / 2,
-          y: toNode.position.y + NODE_HEIGHT / 2,
-        };
+        const fromCenter = getNodeCenter(fromNode);
+        const toCenter = getNodeCenter(toNode);
 
-        const centerDx = toCenter.x - fromCenter.x;
-        const centerDy = toCenter.y - fromCenter.y;
-        const preferHorizontal = Math.abs(centerDx) >= Math.abs(centerDy);
-
-        const fromPoint = preferHorizontal
-          ? {
-              x:
-                centerDx >= 0
-                  ? fromNode.position.x + NODE_WIDTH
-                  : fromNode.position.x,
-              y: fromCenter.y,
-            }
-          : {
-              x: fromCenter.x,
-              y:
-                centerDy >= 0
-                  ? fromNode.position.y + NODE_HEIGHT
-                  : fromNode.position.y,
-            };
-
-        const toPoint = preferHorizontal
-          ? {
-              x:
-                centerDx >= 0
-                  ? toNode.position.x
-                  : toNode.position.x + NODE_WIDTH,
-              y: toCenter.y,
-            }
-          : {
-              x: toCenter.x,
-              y:
-                centerDy >= 0
-                  ? toNode.position.y
-                  : toNode.position.y + NODE_HEIGHT,
-            };
+        const fromPoint = getNodeEdgePoint(fromNode, toCenter);
+        const toPoint = getNodeEdgePoint(toNode, fromCenter);
 
         const dx = toPoint.x - fromPoint.x;
         const dy = toPoint.y - fromPoint.y;
