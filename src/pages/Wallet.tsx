@@ -834,34 +834,44 @@ const Wallet = () => {
                 </div>
               </div>
               <div className={styles.policyInputs}>
-                <Input
-                  id="per-run-cap"
-                  fieldSize="md"
-                  type="number"
-                  min={0}
-                  label="Per-run cap"
-                  note="USDC"
-                  value={perRunCap}
-                  onChange={(event) => setPerRunCap(Number(event.target.value))}
-                />
-                <Input
-                  id="daily-cap"
-                  fieldSize="md"
-                  type="number"
-                  min={0}
-                  label="Daily cap"
-                  note="USDC"
-                  value={dailyCap}
-                  onChange={(event) => setDailyCap(Number(event.target.value))}
-                />
+                <div className={styles.policyInput}>
+                  <Input
+                    id="per-run-cap"
+                    fieldSize="md"
+                    type="number"
+                    min={0}
+                    label="Per-run cap"
+                    value={perRunCap}
+                    onChange={(event) =>
+                      setPerRunCap(Number(event.target.value))
+                    }
+                  />
+                  <span className={styles.policyInputSuffix}>USDC</span>
+                </div>
+                <div className={styles.policyInput}>
+                  <Input
+                    id="daily-cap"
+                    fieldSize="md"
+                    type="number"
+                    min={0}
+                    label="Daily cap"
+                    value={dailyCap}
+                    onChange={(event) =>
+                      setDailyCap(Number(event.target.value))
+                    }
+                  />
+                  <span className={styles.policyInputSuffix}>USDC</span>
+                </div>
               </div>
-              <Button
-                variant="primary"
-                size="md"
-                className={`${styles.fullWidthButton} ${styles.policyButton}`}
-              >
-                Update caps
-              </Button>
+              <div className={styles.policyActions}>
+                <Button
+                  variant="primary"
+                  size="md"
+                  className={styles.policyButton}
+                >
+                  Update caps
+                </Button>
+              </div>
             </div>
           </div>
         </div>
