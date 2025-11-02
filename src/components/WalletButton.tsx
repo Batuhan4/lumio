@@ -24,7 +24,7 @@ export const WalletButton = () => {
       <Button
         className={styles.connectButton}
         variant="primary"
-        size="md"
+        size="sm"
         onClick={() => void connectWallet()}
       >
         {buttonLabel}
@@ -50,7 +50,7 @@ export const WalletButton = () => {
           onClick={() => setShowDisconnectModal(true)}
         >
           <span className={styles.profile}>
-            <Avatar publicAddress={address} size="lg" />
+            <Avatar publicAddress={address} size="md" />
           </span>
           <span className={styles.addressStack}>
             <span className={styles.addressLabel}>Connected</span>
