@@ -2137,6 +2137,7 @@ Provide an actionable financial summary that references concrete balances, recen
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
+  const [isCanvasFullscreen, setCanvasFullscreen] = useState(false);
   const scaleRef = useRef(scale);
   const panRef = useRef(pan);
   const panPointerRef = useRef<{
@@ -2163,6 +2164,17 @@ Provide an actionable financial summary that references concrete balances, recen
   useEffect(() => {
     panRef.current = pan;
   }, [pan]);
+
+  useEffect(() => {
+    if (typeof document === "undefined" || !isCanvasFullscreen) {
+      return;
+    }
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isCanvasFullscreen]);
 
   const gridStyles = useMemo(() => {
     const rawSpacing = Math.abs(GRID_SIZE * scale);
@@ -3028,12 +3040,35 @@ Provide an actionable financial summary that references concrete balances, recen
               ))}
             </aside>
 
-            <div className={styles.canvasShell}>
+            <div
+              className={[
+                styles.canvasShell,
+                isCanvasFullscreen ? styles.canvasShellFullscreen : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            >
               <div className={styles.canvasHeader}>
                 <Text as="h2" size="sm">
                   Flow canvas
                 </Text>
                 <div className={styles.canvasControls}>
+                  <Button
+                    variant="tertiary"
+                    size="sm"
+                    onClick={() => setCanvasFullscreen((previous) => !previous)}
+                    aria-label={
+                      isCanvasFullscreen
+                        ? "Exit fullscreen"
+                        : "Enter fullscreen"
+                    }
+                  >
+                    {isCanvasFullscreen ? (
+                      <Icon.Minimize02 />
+                    ) : (
+                      <Icon.Maximize02 />
+                    )}
+                  </Button>
                   <Button
                     variant="tertiary"
                     size="sm"

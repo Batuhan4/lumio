@@ -335,6 +335,25 @@
   position: relative;
 }
 
+.canvasShellFullscreen {
+  position: fixed;
+  inset: 1.5rem;
+  z-index: 40;
+  width: calc(100vw - 3rem);
+  height: calc(100vh - 3rem);
+  max-width: none;
+  max-height: none;
+  margin: 0;
+}
+
+.canvasShellFullscreen .canvas {
+  padding: 2rem;
+}
+
+.canvasShellFullscreen .canvasSurface {
+  border-radius: 1.5rem;
+}
+
 .canvasHeader {
   display: flex;
   justify-content: space-between;
