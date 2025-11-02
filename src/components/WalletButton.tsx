@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Button, Modal, Profile } from "@stellar/design-system";
+import { Avatar, Button, Modal } from "@stellar/design-system";
 import { useWallet } from "../hooks/useWallet";
 import { useWalletBalance } from "../hooks/useWalletBalance";
 import { connectWallet, disconnectWallet } from "../util/wallet";
@@ -50,7 +50,7 @@ export const WalletButton = () => {
           onClick={() => setShowDisconnectModal(true)}
         >
           <span className={styles.profile}>
-            <Profile publicAddress={address} size="md" isShort />
+            <Avatar publicAddress={address} size="lg" />
           </span>
           <span className={styles.addressStack}>
             <span className={styles.addressLabel}>Connected</span>

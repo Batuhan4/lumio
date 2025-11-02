@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Badge,
   Button,
   Icon,
   Input,
@@ -715,9 +714,6 @@ const Wallet = () => {
               reconcile refunds without leaving the dashboard.
             </Text>
           </div>
-          <Badge variant="secondary" size="md">
-            Testnet escrow
-          </Badge>
         </div>
 
         <div className={styles.grid}>
