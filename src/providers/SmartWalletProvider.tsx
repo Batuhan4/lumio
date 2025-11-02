@@ -127,23 +127,6 @@ const selectSupplementMeter = (rates: ContractUsageBreakdown) => {
   return { key: "runtime_ms" as const, rate: 0n };
 };
 
-const toBigIntSafe = (value: unknown): bigint => {
-  if (typeof value === "bigint") {
-    return value;
-  }
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return BigInt(Math.trunc(value));
-  }
-  if (typeof value === "string" && value.trim().length > 0) {
-    try {
-      return BigInt(value.trim());
-    } catch {
-      return 0n;
-    }
-  }
-  return 0n;
-};
-
 const generateId = (prefix: string) =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
@@ -341,31 +324,26 @@ export const SmartWalletProvider = ({ children }: PropsWithChildren) => {
           ? Number(rawVersion)
           : typeof rawVersion === "number"
             ? rawVersion
-            : 0;
-      if (!Number.isFinite(rateVersion) || rateVersion <= 0) {
-        throw new Error("Agent registry returned an invalid rate version.");
-      }
+            : 1;
 
       const rateCardTx = await registryClient.get_rate_card({
         agent_id: agentId,
         version: rateVersion,
       });
       const rateCard = rateCardTx.result;
-      if (!rateCard || typeof rateCard !== "object") {
-        throw new Error("Unable to load rate card for agent.");
-      }
-      const rawRates = (rateCard as { rates?: unknown }).rates;
-      if (!rawRates || typeof rawRates !== "object" || rawRates === null) {
-        throw new Error("Agent rate card is missing usage rates.");
+      if (!rateCard) {
+        throw new Error("Rate card unavailable.");
       }
       const normalizedRates: ContractUsageBreakdown = {
-        llm_in: toBigIntSafe((rawRates as Record<string, unknown>).llm_in),
-        llm_out: toBigIntSafe((rawRates as Record<string, unknown>).llm_out),
-        http_calls: toBigIntSafe(
-          (rawRates as Record<string, unknown>).http_calls,
+        llm_in: BigInt((rateCard.rates as ContractUsageBreakdown).llm_in ?? 0n),
+        llm_out: BigInt(
+          (rateCard.rates as ContractUsageBreakdown).llm_out ?? 0n,
         ),
-        runtime_ms: toBigIntSafe(
-          (rawRates as Record<string, unknown>).runtime_ms,
+        http_calls: BigInt(
+          (rateCard.rates as ContractUsageBreakdown).http_calls ?? 0n,
+        ),
+        runtime_ms: BigInt(
+          (rateCard.rates as ContractUsageBreakdown).runtime_ms ?? 0n,
         ),
       };
 
