@@ -11,7 +11,7 @@ const MetadataCard = ({
         backgroundColor: "#F3F3F3",
         padding: "0.8rem",
         borderRadius: "8px",
-        fontFamily: "Arial, sans-serif",
+        fontFamily: '"Inter", system-ui, sans-serif',
         maxWidth: "fit-content",
         border: "1px solid #E2E2E2",
       }}

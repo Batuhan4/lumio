@@ -5,7 +5,7 @@
 }
 
 .logoText {
-  font-family: "Manrope", "Inter", system-ui, sans-serif;
+  font-family: "Inter", system-ui, sans-serif;
   font-size: clamp(1.75rem, 1.6rem + 0.5vw, 2.35rem);
   font-weight: 700;
   letter-spacing: 0.02em;

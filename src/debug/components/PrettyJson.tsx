@@ -36,7 +36,7 @@ type Char = "{" | "}" | "[" | "]";
 // CSS-in-JS styles
 const styles = {
   prettyJson: {
-    fontFamily: "var(--sds-ff-monospace)",
+    fontFamily: '"Inter", system-ui, sans-serif',
     fontSize: "14px",
     lineHeight: "20px",
     fontWeight: "var(--sds-fw-medium)",

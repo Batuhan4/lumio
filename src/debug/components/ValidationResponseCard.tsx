@@ -37,7 +37,7 @@ const styles = {
     fontSize: "14px",
     lineHeight: "20px",
     color: "var(--sds-clr-gray-12)",
-    fontFamily: "var(--sds-ff-monospace)",
+    fontFamily: '"Inter", system-ui, sans-serif',
     fontWeight: "var(--sds-fw-medium)",
     padding: "1rem",
     wordWrap: "break-word" as const,
@@ -152,7 +152,7 @@ export const ValidationResponseCard = ({
                   .ValidationResponseCard__content ul {
                     font-size: inherit;
                     line-height: inherit;
-                    font-family: var(--sds-ff-monospace);
+                    font-family: "Inter", system-ui, sans-serif;
                     font-weight: var(--sds-fw-medium);
                     padding-left: 1rem;
                   }

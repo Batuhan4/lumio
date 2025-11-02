@@ -166,7 +166,7 @@
 }
 
 .stepNumber {
-  font-family: "Inconsolata", monospace;
+  font-family: "Inter", system-ui, sans-serif;
   font-size: 0.875rem;
   letter-spacing: 0.28em;
   text-transform: uppercase;
