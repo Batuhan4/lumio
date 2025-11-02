@@ -716,7 +716,7 @@ const Wallet = () => {
           </div>
         </div>
 
-        <div className={styles.grid}>
+        <div className={styles.primaryGrid}>
           <div className={styles.panel}>
             <div className={styles.cardContent}>
               <Text as="h3" size="md">
@@ -734,34 +734,34 @@ const Wallet = () => {
                 </div>
               ) : null}
               <div className={styles.balanceRow}>
-                <Text as="span" size="sm">
+                <Text as="span" size="md" className={styles.balanceLabel}>
                   Escrow balance
                 </Text>
-                <Text as="span" size="md">
+                <Text as="span" size="lg" className={styles.balanceValue}>
                   {balanceDisplay}
                 </Text>
               </div>
               <div className={styles.balanceRow}>
-                <Text as="span" size="sm">
+                <Text as="span" size="md" className={styles.balanceLabel}>
                   Reserved for open runs
                 </Text>
-                <Text as="span" size="sm">
+                <Text as="span" size="md" className={styles.balanceValue}>
                   {formatCurrency(reservedBalance)}
                 </Text>
               </div>
               <div className={styles.balanceRow}>
-                <Text as="span" size="sm">
+                <Text as="span" size="md" className={styles.balanceLabel}>
                   Pending withdrawals
                 </Text>
-                <Text as="span" size="sm">
+                <Text as="span" size="md" className={styles.balanceValue}>
                   {formatCurrency(pendingWithdrawals)}
                 </Text>
               </div>
               <div className={styles.balanceRow}>
-                <Text as="span" size="sm">
+                <Text as="span" size="md" className={styles.balanceLabel}>
                   Available to run
                 </Text>
-                <Text as="span" size="md">
+                <Text as="span" size="lg" className={styles.balanceValue}>
                   {availableDisplay}
                 </Text>
               </div>
@@ -777,20 +777,22 @@ const Wallet = () => {
               <div className={styles.actions}>
                 <Button
                   variant="primary"
-                  size="md"
+                  size="lg"
                   disabled={!address || isWalletPending}
                   onClick={handleOpenDeposit}
+                  className={styles.actionButton}
                 >
                   <Icon.ArrowCircleDown />
                   Deposit
                 </Button>
                 <Button
                   variant="tertiary"
-                  size="md"
+                  size="lg"
                   disabled={
                     !address || isWalletPending || availableBalance <= 0
                   }
                   onClick={handleOpenWithdraw}
+                  className={styles.actionButtonSecondary}
                 >
                   <Icon.ArrowCircleUp />
                   Withdraw
@@ -856,13 +858,15 @@ const Wallet = () => {
               <Button
                 variant="primary"
                 size="md"
-                className={styles.fullWidthButton}
+                className={`${styles.fullWidthButton} ${styles.policyButton}`}
               >
                 Update caps
               </Button>
             </div>
           </div>
+        </div>
 
+        <div className={styles.secondaryGrid}>
           <div className={styles.panel}>
             <div className={styles.cardContent}>
               <div className={styles.sectionHeader}>
