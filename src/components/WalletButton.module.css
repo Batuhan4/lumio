@@ -1,0 +1,134 @@
+.walletCard {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.6rem 0.85rem;
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, rgba(92, 108, 255, 0.18), rgba(22, 28, 48, 0.7))
+      border-box,
+    rgba(12, 16, 28, 0.78) padding-box;
+  border: 1px solid rgba(92, 108, 255, 0.34);
+  box-shadow:
+    0 18px 32px rgba(4, 10, 24, 0.38),
+    inset 0 1px 0 rgba(201, 210, 255, 0.18);
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.walletCard:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 22px 46px rgba(6, 12, 30, 0.42),
+    inset 0 1px 0 rgba(201, 210, 255, 0.28);
+}
+
+.walletCard[data-loading="true"] {
+  opacity: 0.62;
+  pointer-events: none;
+}
+
+.balanceStack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 10.5rem;
+}
+
+.balanceLabel {
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(200, 210, 255, 0.58);
+}
+
+.balanceValue {
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #ffffff;
+  letter-spacing: 0.04em;
+}
+
+.divider {
+  width: 1px;
+  align-self: stretch;
+  background: linear-gradient(
+    180deg,
+    rgba(92, 108, 255, 0.08),
+    rgba(92, 108, 255, 0.4),
+    rgba(92, 108, 255, 0.08)
+  );
+}
+
+.addressButton {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.45rem 0.7rem 0.45rem 0.55rem;
+  border-radius: 16px;
+  border: 1px solid rgba(92, 108, 255, 0.32);
+  background: linear-gradient(
+      135deg,
+      rgba(26, 32, 56, 0.82),
+      rgba(18, 22, 42, 0.6)
+    )
+    padding-box;
+  color: rgba(224, 233, 255, 0.88);
+  cursor: pointer;
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 0.95rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+  transition:
+    color 0.18s ease,
+    border-color 0.18s ease,
+    transform 0.18s ease;
+}
+
+.addressButton:hover {
+  color: #ffffff;
+  border-color: rgba(92, 108, 255, 0.48);
+  transform: translateY(-1px);
+}
+
+.addressButton:focus-visible {
+  outline: 2px solid rgba(92, 108, 255, 0.8);
+  outline-offset: 2px;
+}
+
+.profile {
+  flex-shrink: 0;
+}
+
+.addressStack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.12rem;
+  text-align: left;
+}
+
+.addressLabel {
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 0.6rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(200, 210, 255, 0.62);
+}
+
+.addressValue {
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 0.92rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: #ffffff;
+}
+
+.connectButton {
+  min-width: 8.5rem;
+}

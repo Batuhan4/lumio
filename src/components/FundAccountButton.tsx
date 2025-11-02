@@ -4,6 +4,7 @@ import { useWallet } from "../hooks/useWallet.ts";
 import { Button, Tooltip } from "@stellar/design-system";
 import { getFriendbotUrl } from "../util/friendbot";
 import { useWalletBalance } from "../hooks/useWalletBalance.ts";
+import styles from "./FundAccountButton.module.css";
 
 const FundAccountButton: React.FC = () => {
   const { addNotification } = useNotification();
@@ -52,9 +53,10 @@ const FundAccountButton: React.FC = () => {
         placement="bottom"
         triggerEl={
           <Button
+            className={styles.fundButton}
             disabled={isPending || isLoading || isFunded}
             onClick={handleFundAccount}
-            variant="primary"
+            variant="tertiary"
             size="md"
           >
             Fund Account

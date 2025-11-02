@@ -1,4 +1,4 @@
-import { Button, Icon, Layout } from "@stellar/design-system";
+import { Layout } from "@stellar/design-system";
 import ConnectAccount from "./components/ConnectAccount.tsx";
 import { LumioLogo } from "./components/LumioLogo";
 import { Routes, Route, Outlet, NavLink } from "react-router-dom";
@@ -43,14 +43,6 @@ const AppLayout: React.FC = () => (
             </nav>
           </div>
           <div className={styles.headerRight}>
-            <NavLink to="/debug">
-              {({ isActive }) => (
-                <Button variant="tertiary" size="md" disabled={isActive}>
-                  <Icon.Code02 size="md" />
-                  Debugger
-                </Button>
-              )}
-            </NavLink>
             <ConnectAccount />
           </div>
         </div>

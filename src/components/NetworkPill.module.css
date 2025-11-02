@@ -1,0 +1,39 @@
+.networkPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.55rem 1rem;
+  border-radius: 999px;
+  background:
+    linear-gradient(135deg, rgba(92, 108, 255, 0.16), rgba(65, 240, 192, 0.12))
+      border-box,
+    rgba(10, 14, 28, 0.8) padding-box;
+  border: 1px solid rgba(92, 108, 255, 0.24);
+  box-shadow: inset 0 1px 0 rgba(184, 198, 255, 0.24);
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(224, 233, 255, 0.86);
+  transition: border-color 0.18s ease;
+}
+
+.networkPill[data-mismatch=\"true\"] {
+  border-color: rgba(255, 59, 48, 0.48);
+}
+
+.statusDot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px rgba(62, 225, 148, 0.16);
+}
+
+.networkPill[data-mismatch=\"true\"] .statusDot {
+  box-shadow: 0 0 0 4px rgba(255, 59, 72, 0.18);
+}
+
+.networkPill[data-idle=\"true\"] .statusDot {
+  box-shadow: 0 0 0 4px rgba(193, 199, 208, 0.18);
+}

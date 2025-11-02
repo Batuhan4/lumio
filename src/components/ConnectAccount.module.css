@@ -1,0 +1,11 @@
+.connectAccount {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+@media (max-width: 900px) {
+  .connectAccount {
+    gap: 0.75rem;
+  }
+}

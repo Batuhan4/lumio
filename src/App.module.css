@@ -43,12 +43,13 @@
 
 .navLink {
   text-decoration: none;
+  font-family: "Sora", "Inter", system-ui, sans-serif;
   font-weight: 600;
   font-size: 1rem;
   color: rgba(230, 238, 255, 0.78);
   padding: 0.35rem 0.25rem;
   border-bottom: 2px solid transparent;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.04em;
   transition:
     color 0.18s ease,
     border-color 0.18s ease;

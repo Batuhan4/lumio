@@ -1,7 +1,7 @@
 import React from "react";
-import { Icon } from "@stellar/design-system";
 import { useWallet } from "../hooks/useWallet";
 import { stellarNetwork } from "../contracts/util";
+import styles from "./NetworkPill.module.css";
 
 // Format network name with first letter capitalized
 const formatNetworkName = (name: string) =>
@@ -11,9 +11,6 @@ const formatNetworkName = (name: string) =>
     : name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
 
 const appNetwork = formatNetworkName(stellarNetwork);
-
-const bgColor = "#F0F2F5";
-const textColor = "#4A5362";
 
 const NetworkPill: React.FC = () => {
   const { network, address } = useWallet();
@@ -34,22 +31,18 @@ const NetworkPill: React.FC = () => {
 
   return (
     <div
-      style={{
-        backgroundColor: bgColor,
-        color: textColor,
-        padding: "4px 10px",
-        borderRadius: "16px",
-        fontSize: "12px",
-        fontWeight: "bold",
-        display: "flex",
-        alignItems: "center",
-        gap: "4px",
-        cursor: isNetworkMismatch ? "help" : "default",
-      }}
+      className={styles.networkPill}
       title={title}
+      data-mismatch={isNetworkMismatch ? "true" : undefined}
+      data-idle={!address ? "true" : undefined}
+      style={{ cursor: isNetworkMismatch ? "help" : "default" }}
     >
-      <Icon.Circle color={color} />
-      {appNetwork}
+      <span
+        className={styles.statusDot}
+        style={{ backgroundColor: color }}
+        aria-hidden="true"
+      />
+      <span>{appNetwork}</span>
     </div>
   );
 };
