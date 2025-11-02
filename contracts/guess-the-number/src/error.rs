@@ -8,5 +8,4 @@ pub enum Error {
     FailedToTransferFromGuesser = 2,
     /// The contract has no balance to transfer to the guesser
     NoBalanceToTransfer = 3,
-    
 }

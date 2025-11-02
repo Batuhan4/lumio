@@ -39,11 +39,18 @@ lerna-debug.log*
 packages/*
 # if you have other workspace packages, add them here
 !packages/.gitkeep
+!packages/runner_service/
+!packages/runner_service/package.json
+!packages/runner_service/tsconfig.json
+!packages/runner_service/src/**
+packages/runner_service/.runner-state.json
 
 # generated contract client imports
 src/contracts/*
 !src/contracts/util.ts
 !src/contracts/guess_the_number.ts
+!src/contracts/agent_registry.ts
+!src/contracts/prepaid_vault.ts
 
 # local AI documentation drafts
 aidocs/

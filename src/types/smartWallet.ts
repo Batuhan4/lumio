@@ -13,6 +13,15 @@ export type SmartWalletTransaction = {
   balanceAfter: number;
   requested?: number;
   insufficient?: boolean;
+  runnerRequestId?: string;
+  contractRunId?: number;
+  status?:
+    | "pending"
+    | "opening"
+    | "running"
+    | "finalizing"
+    | "finalized"
+    | "failed";
 };
 
 export type SmartWalletPersistence = {

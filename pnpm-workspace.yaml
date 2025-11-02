@@ -1,5 +1,8 @@
+packages:
+  - packages/*
+
 onlyBuiltDependencies:
-  - '@stellar/stellar-sdk'
+  - "@stellar/stellar-sdk"
   - blake-hash
   - bufferutil
   - esbuild

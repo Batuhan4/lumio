@@ -1839,6 +1839,7 @@ const Builder = () => {
           }
 
           if (node.kind === "gemini") {
+            const geminiConfig = node.config as GeminiNodeConfig;
             if (!geminiApiKey) {
               const fallbackText =
                 "Simulated Gemini output. Add VITE_GEMINI_API_KEY to run live.";
@@ -1863,7 +1864,7 @@ const Builder = () => {
 
               outputs.set(node.id, {
                 [`${node.id}.output_text`]: fallbackText,
-                ...(node.config.responseMimeType === "application/json"
+                ...(geminiConfig.responseMimeType === "application/json"
                   ? { [`${node.id}.output_json`]: fallbackText }
                   : {}),
               });
@@ -2722,7 +2723,7 @@ Provide an actionable financial summary that references concrete balances, recen
                 </span>
                 <Button
                   variant="tertiary"
-                  size="xs"
+                  size="sm"
                   onClick={() => removeConnection(connection.id)}
                 >
                   Remove
@@ -2740,7 +2741,7 @@ Provide an actionable financial summary that references concrete balances, recen
                 </span>
                 <Button
                   variant="tertiary"
-                  size="xs"
+                  size="sm"
                   onClick={() => removeConnection(connection.id)}
                 >
                   Remove

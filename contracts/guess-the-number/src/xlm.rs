@@ -45,13 +45,15 @@ pub const SERIALIZED_ASSET: [u8; 4] = [0, 0, 0, 0];
 
 pub use xlm::*;
 mod register {
-    
+
     #[allow(unused)]
     #[cfg(not(test))]
     pub fn register(env: &soroban_sdk::Env, admin: &soroban_sdk::Address) {
         let balance = super::token_client(env).try_balance(&env.current_contract_address());
-        if balance.is_err()  {
-            env.deployer().with_stellar_asset(super::SERIALIZED_ASSET).deploy();
+        if balance.is_err() {
+            env.deployer()
+                .with_stellar_asset(super::SERIALIZED_ASSET)
+                .deploy();
         }
     }
 }

@@ -11,12 +11,14 @@ pub enum DataKey {
     UserPolicy(Address),
     Run(u64),
     NextRunId,
+    RunnerGrants(Address),
 }
 
 #[derive(Clone)]
 #[contracttype]
 pub struct RunRecord {
     pub user: Address,
+    pub opened_by: Address,
     pub agent_id: u32,
     pub rate_version: u32,
     pub budgets: UsageBreakdown,

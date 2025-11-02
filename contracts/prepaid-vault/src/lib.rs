@@ -8,7 +8,8 @@ mod utils;
 
 pub use contract::PrepaidVault;
 pub use types::{
-    PolicyInput, RunLifecycle, RunReceipt, RunSettlement, UsageBreakdown, UserPolicy, VaultError,
+    PolicyInput, RunFinalizedLog, RunLifecycle, RunOpenedLog, RunReceipt, RunSettlement,
+    RunnerGrant, RunnerGrantLog, RunnerRevokeLog, UsageBreakdown, UserPolicy, VaultError,
 };
 
 #[cfg(test)]

@@ -1,4 +1,6 @@
-use soroban_sdk::{contract, contractimpl, contracterror, panic_with_error, Address, Env, String, Vec};
+use soroban_sdk::{
+    contract, contracterror, contractimpl, panic_with_error, Address, Env, String, Vec,
+};
 
 use crate::{
     storage::{AgentRecord, DataKey},
@@ -26,9 +28,7 @@ impl AgentRegistry {
         if e.storage().instance().has(&DataKey::NextAgentId) {
             panic_with_error!(&e, AgentRegistryError::AlreadyInitialized);
         }
-        e.storage()
-            .instance()
-            .set(&DataKey::NextAgentId, &1u32);
+        e.storage().instance().set(&DataKey::NextAgentId, &1u32);
     }
 
     pub fn register_agent(
@@ -123,11 +123,7 @@ impl AgentRegistry {
             .set(&DataKey::Agent(agent_id), &record);
     }
 
-    pub fn publish_rate_card(
-        e: Env,
-        agent_id: u32,
-        rate_card: RateCardInput,
-    ) -> u32 {
+    pub fn publish_rate_card(e: Env, agent_id: u32, rate_card: RateCardInput) -> u32 {
         if !rate_card.rates.validate_non_negative() {
             panic_with_error!(&e, AgentRegistryError::InvalidRates);
         }
@@ -185,18 +181,12 @@ impl AgentRegistry {
 }
 
 fn next_agent_id_and_increment(e: &Env) -> u32 {
-    let current = match e
-        .storage()
-        .instance()
-        .get::<_, u32>(&DataKey::NextAgentId)
-    {
+    let current = match e.storage().instance().get::<_, u32>(&DataKey::NextAgentId) {
         Some(id) => id,
         None => 1,
     };
     let next = current.checked_add(1).unwrap();
-    e.storage()
-        .instance()
-        .set(&DataKey::NextAgentId, &next);
+    e.storage().instance().set(&DataKey::NextAgentId, &next);
     current
 }
 

@@ -1,0 +1,26 @@
+{
+  "name": "@lumio/runner-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node --enable-source-maps dist/index.js",
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "^14.2.0",
+    "agent_registry": "workspace:*",
+    "body-parser": "^1.20.3",
+    "express": "^4.19.2",
+    "prepaid_vault": "workspace:*",
+    "zod": "^4.1.11"
+  },
+  "devDependencies": {
+    "@types/body-parser": "^1.19.5",
+    "@types/express": "^4.17.21",
+    "@types/node": "^24.9.2",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "~5.9.2"
+  }
+}

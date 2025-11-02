@@ -1,11 +1,13 @@
 use agent_registry::AgentRegistryClient;
-use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env};
+use soroban_sdk::{
+    contract, contractimpl, panic_with_error, symbol_short, Address, BytesN, Env, Vec,
+};
 
 use crate::{
     storage::{DataKey, RunRecord},
     types::{
-        PolicyInput, RunLifecycle, RunReceipt, RunSettlement, UsageBreakdown, UserPolicy,
-        VaultError,
+        PolicyInput, RunFinalizedLog, RunLifecycle, RunOpenedLog, RunReceipt, RunSettlement,
+        RunnerGrant, RunnerGrantLog, RunnerRevokeLog, UsageBreakdown, UserPolicy, VaultError,
     },
     utils::{compute_charge, current_day, validate_non_negative_usage},
 };
@@ -59,14 +61,102 @@ impl PrepaidVault {
         write_policy(&e, &user, &stored);
     }
 
+    pub fn grant_runner(
+        e: Env,
+        user: Address,
+        runner: Address,
+        agent_id: u32,
+        expires_at: Option<u64>,
+    ) {
+        user.require_auth();
+        if runner == user {
+            panic_with_error!(&e, VaultError::InvalidAmount);
+        }
+
+        let registry_addr = require_registry(&e);
+        let registry = AgentRegistryClient::new(&e, &registry_addr);
+        if !registry.is_runner(&agent_id, &runner) {
+            panic_with_error!(&e, VaultError::UnauthorizedRunner);
+        }
+
+        let grants = read_runner_grants(&e, &user);
+        let mut grants = prune_expired_grants(&e, grants);
+        for grant in grants.iter() {
+            if grant.runner == runner && grant.agent_id == agent_id {
+                panic_with_error!(&e, VaultError::RunnerGrantExists);
+            }
+        }
+
+        let grant = RunnerGrant {
+            runner: runner.clone(),
+            agent_id,
+            issued_at: e.ledger().timestamp(),
+            expires_at,
+        };
+
+        grants.push_back(grant.clone());
+        write_runner_grants(&e, &user, &grants);
+
+        e.events().publish(
+            (symbol_short!("runner"), symbol_short!("granted")),
+            RunnerGrantLog {
+                user,
+                runner,
+                agent_id,
+                issued_at: grant.issued_at,
+                expires_at: grant.expires_at,
+            },
+        );
+    }
+
+    pub fn revoke_runner(e: Env, user: Address, runner: Address, agent_id: u32) {
+        user.require_auth();
+
+        let grants = read_runner_grants(&e, &user);
+        let grants = prune_expired_grants(&e, grants);
+        let (filtered, removed) = remove_runner_grant(&e, grants, &runner, agent_id);
+        if !removed {
+            panic_with_error!(&e, VaultError::RunnerGrantNotFound);
+        }
+        write_runner_grants(&e, &user, &filtered);
+
+        e.events().publish(
+            (symbol_short!("runner"), symbol_short!("revoked")),
+            RunnerRevokeLog {
+                user,
+                runner,
+                agent_id,
+                revoked_at: e.ledger().timestamp(),
+            },
+        );
+    }
+
+    pub fn list_runner_grants(e: Env, user: Address) -> Vec<RunnerGrant> {
+        let grants = read_runner_grants(&e, &user);
+        let grants = prune_expired_grants(&e, grants);
+        write_runner_grants(&e, &user, &grants);
+        grants
+    }
+
+    pub fn is_runner_authorized(e: Env, user: Address, runner: Address, agent_id: u32) -> bool {
+        ensure_runner_authorized(&e, &user, &runner, agent_id)
+    }
+
     pub fn open_run(
         e: Env,
         user: Address,
+        caller: Address,
         agent_id: u32,
         rate_version: u32,
         budgets: UsageBreakdown,
     ) -> u64 {
-        user.require_auth();
+        caller.require_auth();
+        if caller != user {
+            if !ensure_runner_authorized(&e, &user, &caller, agent_id) {
+                panic_with_error!(&e, VaultError::UnauthorizedRunner);
+            }
+        }
+
         if !validate_non_negative_usage(&budgets) {
             panic_with_error!(&e, VaultError::InvalidAmount);
         }
@@ -112,6 +202,7 @@ impl PrepaidVault {
         let run_id = next_run_id(&e);
         let record = RunRecord {
             user: user.clone(),
+            opened_by: caller.clone(),
             agent_id,
             rate_version,
             budgets,
@@ -121,9 +212,21 @@ impl PrepaidVault {
             lifecycle: RunLifecycle::Open,
         };
 
-        e.storage()
-            .instance()
-            .set(&DataKey::Run(run_id), &record);
+        e.storage().instance().set(&DataKey::Run(run_id), &record);
+
+        e.events().publish(
+            (symbol_short!("run"), symbol_short!("opened")),
+            RunOpenedLog {
+                run_id,
+                user,
+                opened_by: caller,
+                agent_id,
+                rate_version,
+                max_charge,
+                budgets: record.budgets.clone(),
+                opened_at: record.opened_at,
+            },
+        );
 
         run_id
     }
@@ -170,6 +273,10 @@ impl PrepaidVault {
         let rate_card = registry.get_rate_card(&record.agent_id, &record.rate_version);
         let developer = registry.developer_of(&record.agent_id);
 
+        if !ensure_runner_authorized(&e, &record.user, &runner, record.agent_id) {
+            panic_with_error!(&e, VaultError::UnauthorizedRunner);
+        }
+
         let actual_charge = compute_charge(&rate_card.rates, &usage)
             .unwrap_or_else(|| panic_with_error!(&e, VaultError::InvalidAmount));
 
@@ -197,6 +304,7 @@ impl PrepaidVault {
         release_reserved(&e, &record.user, record.max_charge);
 
         record.escrowed = 0;
+        let output_hash_clone = output_hash.clone();
         record.lifecycle = RunLifecycle::Finalized(RunSettlement {
             usage: usage.clone(),
             actual_charge,
@@ -204,9 +312,20 @@ impl PrepaidVault {
             output_hash,
         });
 
-        e.storage()
-            .instance()
-            .set(&DataKey::Run(run_id), &record);
+        e.storage().instance().set(&DataKey::Run(run_id), &record);
+
+        e.events().publish(
+            (symbol_short!("run"), symbol_short!("finalized")),
+            RunFinalizedLog {
+                run_id,
+                runner,
+                actual_charge,
+                refund,
+                usage: usage.clone(),
+                output_hash: output_hash_clone,
+                finalized_at: e.ledger().timestamp(),
+            },
+        );
 
         RunReceipt {
             run_id,
@@ -238,9 +357,7 @@ impl PrepaidVault {
         record.escrowed = 0;
         record.lifecycle = RunLifecycle::Cancelled;
 
-        e.storage()
-            .instance()
-            .set(&DataKey::Run(run_id), &record);
+        e.storage().instance().set(&DataKey::Run(run_id), &record);
     }
 
     pub fn balance_of(e: Env, user: Address) -> i128 {
@@ -265,6 +382,34 @@ impl PrepaidVault {
 
     pub fn get_run(e: Env, run_id: u64) -> RunRecord {
         read_run_or_panic(&e, run_id)
+    }
+}
+
+fn ensure_runner_authorized(e: &Env, user: &Address, runner: &Address, agent_id: u32) -> bool {
+    let grants = read_runner_grants(e, user);
+    let grants = prune_expired_grants(e, grants);
+    let mut authorized = false;
+
+    for grant in grants.iter() {
+        if grant.runner == runner.clone() && grant.agent_id == agent_id {
+            authorized = true;
+            break;
+        }
+    }
+
+    if authorized {
+        let registry_addr = require_registry(e);
+        let registry = AgentRegistryClient::new(e, &registry_addr);
+        if !registry.is_runner(&agent_id, runner) {
+            let (filtered, _) = remove_runner_grant(e, grants, runner, agent_id);
+            write_runner_grants(e, user, &filtered);
+            return false;
+        }
+        write_runner_grants(e, user, &grants);
+        true
+    } else {
+        write_runner_grants(e, user, &grants);
+        false
     }
 }
 
@@ -318,6 +463,61 @@ fn write_policy(e: &Env, user: &Address, policy: &UserPolicy) {
         .set(&DataKey::UserPolicy(user.clone()), policy);
 }
 
+fn read_runner_grants(e: &Env, user: &Address) -> Vec<RunnerGrant> {
+    e.storage()
+        .instance()
+        .get::<_, Vec<RunnerGrant>>(&DataKey::RunnerGrants(user.clone()))
+        .unwrap_or_else(|| Vec::new(e))
+}
+
+fn write_runner_grants(e: &Env, user: &Address, grants: &Vec<RunnerGrant>) {
+    if grants.len() == 0 {
+        e.storage()
+            .instance()
+            .remove(&DataKey::RunnerGrants(user.clone()));
+    } else {
+        e.storage()
+            .instance()
+            .set(&DataKey::RunnerGrants(user.clone()), grants);
+    }
+}
+
+fn prune_expired_grants(e: &Env, grants: Vec<RunnerGrant>) -> Vec<RunnerGrant> {
+    if grants.len() == 0 {
+        return grants;
+    }
+    let now = e.ledger().timestamp();
+    let mut filtered = Vec::new(e);
+    for grant in grants.iter() {
+        match grant.expires_at {
+            Some(expiry) if expiry <= now => {}
+            _ => filtered.push_back(grant),
+        }
+    }
+    filtered
+}
+
+fn remove_runner_grant(
+    e: &Env,
+    grants: Vec<RunnerGrant>,
+    runner: &Address,
+    agent_id: u32,
+) -> (Vec<RunnerGrant>, bool) {
+    if grants.len() == 0 {
+        return (grants, false);
+    }
+    let mut filtered = Vec::new(e);
+    let mut removed = false;
+    for grant in grants.iter() {
+        if grant.runner == runner.clone() && grant.agent_id == agent_id {
+            removed = true;
+            continue;
+        }
+        filtered.push_back(grant);
+    }
+    (filtered, removed)
+}
+
 fn release_reserved(e: &Env, user: &Address, amount: i128) {
     let mut policy = read_policy(e, user);
     let today = current_day(e);
@@ -337,9 +537,7 @@ fn next_run_id(e: &Env) -> u64 {
         .get::<_, u64>(&DataKey::NextRunId)
         .unwrap_or(1);
     let next = current + 1;
-    e.storage()
-        .instance()
-        .set(&DataKey::NextRunId, &next);
+    e.storage().instance().set(&DataKey::NextRunId, &next);
     current
 }
 

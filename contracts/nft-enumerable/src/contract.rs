@@ -33,8 +33,11 @@ impl ExampleContract {
     }
 
     pub fn mint(e: &Env, to: Address) -> u32 {
-        let owner: Address =
-            e.storage().instance().get(&DataKey::Owner).expect("owner should be set");
+        let owner: Address = e
+            .storage()
+            .instance()
+            .get(&DataKey::Owner)
+            .expect("owner should be set");
         owner.require_auth();
         Enumerable::sequential_mint(e, &to)
     }

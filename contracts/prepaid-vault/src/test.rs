@@ -1,12 +1,14 @@
 extern crate std;
 
 use agent_registry::{AgentRegistry, AgentRegistryClient, RateCardInput, UsageMeterRates};
-use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, Vec};
+use soroban_sdk::{
+    testutils::{Address as _, MockAuth, MockAuthInvoke},
+    Address, BytesN, Env, IntoVal, Val, Vec,
+};
 
 use crate::{
     contract::{PrepaidVault, PrepaidVaultClient},
-    utils,
-    PolicyInput, RunLifecycle, UsageBreakdown,
+    utils, PolicyInput, RunLifecycle, UsageBreakdown,
 };
 
 fn setup_clients<'a>(
@@ -60,6 +62,44 @@ fn setup_agent(
     registry.register_agent(developer, &None, &runners, &rate)
 }
 
+fn set_caller<T>(client: &PrepaidVaultClient, caller: &Address, fn_name: &'static str, args: T)
+where
+    T: IntoVal<Env, Vec<Val>>,
+{
+    client.env.set_auths(&[]);
+    let invoke = MockAuthInvoke {
+        contract: &client.address,
+        fn_name,
+        args: args.into_val(&client.env),
+        sub_invokes: &[],
+    };
+    client.env.mock_auths(&[MockAuth {
+        address: caller,
+        invoke: &invoke,
+    }]);
+}
+
+fn set_registry_caller<T>(
+    client: &AgentRegistryClient,
+    caller: &Address,
+    fn_name: &'static str,
+    args: T,
+) where
+    T: IntoVal<Env, Vec<Val>>,
+{
+    client.env.set_auths(&[]);
+    let invoke = MockAuthInvoke {
+        contract: &client.address,
+        fn_name,
+        args: args.into_val(&client.env),
+        sub_invokes: &[],
+    };
+    client.env.mock_auths(&[MockAuth {
+        address: caller,
+        invoke: &invoke,
+    }]);
+}
+
 #[test]
 fn finalize_refunds_unused_amount() {
     let e = Env::default();
@@ -73,8 +113,17 @@ fn finalize_refunds_unused_amount() {
     let agent_id = setup_agent(&e, &registry, &developer, &runner);
 
     let deposit_amount: i128 = 20_000_000;
+    set_caller(&vault, &user, "deposit", (&user, &deposit_amount));
     vault.deposit(&user, &deposit_amount);
+    set_caller(&vault, &user, "set_policy", (&user, &default_policy()));
     vault.set_policy(&user, &default_policy());
+    set_caller(
+        &vault,
+        &user,
+        "grant_runner",
+        (&user, &runner, &agent_id, &Option::<u64>::None),
+    );
+    vault.grant_runner(&user, &runner, &agent_id, &Option::<u64>::None);
 
     let budgets = UsageBreakdown {
         llm_in: 100,
@@ -84,7 +133,13 @@ fn finalize_refunds_unused_amount() {
     };
 
     let rate_version = 1u32;
-    let run_id = vault.open_run(&user, &agent_id, &rate_version, &budgets);
+    set_caller(
+        &vault,
+        &user,
+        "open_run",
+        (&user, &user, &agent_id, &rate_version, &budgets),
+    );
+    let run_id = vault.open_run(&user, &user, &agent_id, &rate_version, &budgets);
 
     let usage = UsageBreakdown {
         llm_in: 80,
@@ -97,8 +152,13 @@ fn finalize_refunds_unused_amount() {
     let expected_actual = utils::compute_charge(&sample_rates(), &usage).unwrap();
     let expected_refund = expected_max - expected_actual;
 
-    let receipt =
-        vault.finalize_run(&run_id, &runner, &rate_version, &usage, &hash(&e, 9));
+    set_caller(
+        &vault,
+        &runner,
+        "finalize_run",
+        (&run_id, &runner, &rate_version, &usage, &hash(&e, 9)),
+    );
+    let receipt = vault.finalize_run(&run_id, &runner, &rate_version, &usage, &hash(&e, 9));
 
     assert_eq!(receipt.actual_charge, expected_actual);
     assert_eq!(receipt.refund, expected_refund);
@@ -128,8 +188,18 @@ fn usage_over_budget_panics() {
     vault.init(&registry_addr);
     let agent_id = setup_agent(&e, &registry, &developer, &runner);
 
-    vault.deposit(&user, &20_000_000);
+    let deposit_amount = 20_000_000;
+    set_caller(&vault, &user, "deposit", (&user, &deposit_amount));
+    vault.deposit(&user, &deposit_amount);
+    set_caller(&vault, &user, "set_policy", (&user, &default_policy()));
     vault.set_policy(&user, &default_policy());
+    set_caller(
+        &vault,
+        &user,
+        "grant_runner",
+        (&user, &runner, &agent_id, &Option::<u64>::None),
+    );
+    vault.grant_runner(&user, &runner, &agent_id, &Option::<u64>::None);
 
     let budgets = UsageBreakdown {
         llm_in: 100,
@@ -137,7 +207,13 @@ fn usage_over_budget_panics() {
         http_calls: 1,
         runtime_ms: 1000,
     };
-    let run_id = vault.open_run(&user, &agent_id, &1u32, &budgets);
+    set_caller(
+        &vault,
+        &user,
+        "open_run",
+        (&user, &user, &agent_id, &1u32, &budgets),
+    );
+    let run_id = vault.open_run(&user, &user, &agent_id, &1u32, &budgets);
 
     let usage = UsageBreakdown {
         llm_in: 120,
@@ -146,6 +222,12 @@ fn usage_over_budget_panics() {
         runtime_ms: 400,
     };
 
+    set_caller(
+        &vault,
+        &runner,
+        "finalize_run",
+        (&run_id, &runner, &1u32, &usage, &hash(&e, 2)),
+    );
     vault.finalize_run(&run_id, &runner, &1u32, &usage, &hash(&e, 2));
 }
 
@@ -161,8 +243,18 @@ fn mismatched_rate_version_rejected() {
 
     vault.init(&registry_addr);
     let agent_id = setup_agent(&e, &registry, &developer, &runner);
-    vault.deposit(&user, &20_000_000);
+    let deposit_amount: i128 = 20_000_000;
+    set_caller(&vault, &user, "deposit", (&user, &deposit_amount));
+    vault.deposit(&user, &deposit_amount);
+    set_caller(&vault, &user, "set_policy", (&user, &default_policy()));
     vault.set_policy(&user, &default_policy());
+    set_caller(
+        &vault,
+        &user,
+        "grant_runner",
+        (&user, &runner, &agent_id, &Option::<u64>::None),
+    );
+    vault.grant_runner(&user, &runner, &agent_id, &Option::<u64>::None);
 
     let budgets = UsageBreakdown {
         llm_in: 100,
@@ -170,7 +262,13 @@ fn mismatched_rate_version_rejected() {
         http_calls: 1,
         runtime_ms: 1000,
     };
-    let run_id = vault.open_run(&user, &agent_id, &1u32, &budgets);
+    set_caller(
+        &vault,
+        &user,
+        "open_run",
+        (&user, &user, &agent_id, &1u32, &budgets),
+    );
+    let run_id = vault.open_run(&user, &user, &agent_id, &1u32, &budgets);
 
     // publish new rate card version
     let new_rate = RateCardInput {
@@ -180,6 +278,12 @@ fn mismatched_rate_version_rejected() {
         },
         manifest_hash: hash(&e, 3),
     };
+    set_registry_caller(
+        &registry,
+        &developer,
+        "publish_rate_card",
+        (&agent_id, &new_rate),
+    );
     registry.publish_rate_card(&agent_id, &new_rate);
 
     let usage = UsageBreakdown {
@@ -189,6 +293,12 @@ fn mismatched_rate_version_rejected() {
         runtime_ms: 200,
     };
 
+    set_caller(
+        &vault,
+        &runner,
+        "finalize_run",
+        (&run_id, &runner, &2u32, &usage, &hash(&e, 4)),
+    );
     vault.finalize_run(&run_id, &runner, &2u32, &usage, &hash(&e, 4));
 }
 
@@ -204,7 +314,9 @@ fn cancel_run_refunds_full_amount() {
     vault.init(&registry_addr);
     let agent_id = setup_agent(&e, &registry, &developer, &runner);
     let deposit_amount = 15_000_000;
+    set_caller(&vault, &user, "deposit", (&user, &deposit_amount));
     vault.deposit(&user, &deposit_amount);
+    set_caller(&vault, &user, "set_policy", (&user, &default_policy()));
     vault.set_policy(&user, &default_policy());
 
     let budgets = UsageBreakdown {
@@ -215,8 +327,15 @@ fn cancel_run_refunds_full_amount() {
     };
 
     let rate_version = 1u32;
-    let run_id = vault.open_run(&user, &agent_id, &rate_version, &budgets);
+    set_caller(
+        &vault,
+        &user,
+        "open_run",
+        (&user, &user, &agent_id, &rate_version, &budgets),
+    );
+    let run_id = vault.open_run(&user, &user, &agent_id, &rate_version, &budgets);
     // Cancel should refund entire escrowed amount.
+    set_caller(&vault, &user, "cancel_run", (&user, &run_id));
     vault.cancel_run(&user, &run_id);
     assert_eq!(vault.balance_of(&user), deposit_amount);
     assert_eq!(vault.developer_balance(&developer), 0);
@@ -225,4 +344,120 @@ fn cancel_run_refunds_full_amount() {
         RunLifecycle::Cancelled => {}
         _ => panic!("run expected to be cancelled"),
     }
+}
+
+#[test]
+fn runner_can_open_and_finalize_with_grant() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let (registry, vault, registry_addr, _) = setup_clients(&e);
+    let developer = Address::generate(&e);
+    let runner = Address::generate(&e);
+    let user = Address::generate(&e);
+
+    vault.init(&registry_addr);
+    let agent_id = setup_agent(&e, &registry, &developer, &runner);
+
+    let deposit_amount = 25_000_000;
+    set_caller(&vault, &user, "deposit", (&user, &deposit_amount));
+    vault.deposit(&user, &deposit_amount);
+    set_caller(&vault, &user, "set_policy", (&user, &default_policy()));
+    vault.set_policy(&user, &default_policy());
+    set_caller(
+        &vault,
+        &user,
+        "grant_runner",
+        (&user, &runner, &agent_id, &Option::<u64>::None),
+    );
+    vault.grant_runner(&user, &runner, &agent_id, &Option::<u64>::None);
+
+    let grants = vault.list_runner_grants(&user);
+    assert_eq!(grants.len(), 1);
+
+    let budgets = UsageBreakdown {
+        llm_in: 120,
+        llm_out: 80,
+        http_calls: 2,
+        runtime_ms: 1500,
+    };
+
+    set_caller(
+        &vault,
+        &runner,
+        "open_run",
+        (&user, &runner, &agent_id, &1u32, &budgets),
+    );
+    let run_id = vault.open_run(&user, &runner, &agent_id, &1u32, &budgets);
+    let run = vault.get_run(&run_id);
+    assert_eq!(run.user, user.clone());
+    assert_eq!(run.opened_by, runner.clone());
+
+    let usage = UsageBreakdown {
+        llm_in: 100,
+        llm_out: 60,
+        http_calls: 1,
+        runtime_ms: 1000,
+    };
+
+    set_caller(
+        &vault,
+        &runner,
+        "finalize_run",
+        (&run_id, &runner, &1u32, &usage, &hash(&e, 11)),
+    );
+    let receipt = vault.finalize_run(&run_id, &runner, &1u32, &usage, &hash(&e, 11));
+    assert_eq!(receipt.run_id, run_id);
+
+    let run = vault.get_run(&run_id);
+    match run.lifecycle {
+        RunLifecycle::Finalized(settlement) => {
+            assert_eq!(settlement.usage.llm_in, usage.llm_in);
+        }
+        _ => panic!("run should be finalized"),
+    }
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #15)")]
+fn revoked_runner_cannot_open() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let (registry, vault, registry_addr, _) = setup_clients(&e);
+    let developer = Address::generate(&e);
+    let runner = Address::generate(&e);
+    let user = Address::generate(&e);
+
+    vault.init(&registry_addr);
+    let agent_id = setup_agent(&e, &registry, &developer, &runner);
+
+    let deposit_amount: i128 = 15_000_000;
+    set_caller(&vault, &user, "deposit", (&user, &deposit_amount));
+    vault.deposit(&user, &deposit_amount);
+    set_caller(&vault, &user, "set_policy", (&user, &default_policy()));
+    vault.set_policy(&user, &default_policy());
+    set_caller(
+        &vault,
+        &user,
+        "grant_runner",
+        (&user, &runner, &agent_id, &Option::<u64>::None),
+    );
+    vault.grant_runner(&user, &runner, &agent_id, &Option::<u64>::None);
+
+    set_caller(&vault, &user, "revoke_runner", (&user, &runner, &agent_id));
+    vault.revoke_runner(&user, &runner, &agent_id);
+
+    let budgets = UsageBreakdown {
+        llm_in: 10,
+        llm_out: 10,
+        http_calls: 1,
+        runtime_ms: 100,
+    };
+
+    set_caller(
+        &vault,
+        &runner,
+        "open_run",
+        (&user, &runner, &agent_id, &1u32, &budgets),
+    );
+    vault.open_run(&user, &runner, &agent_id, &1u32, &budgets);
 }

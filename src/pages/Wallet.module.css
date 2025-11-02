@@ -71,6 +71,12 @@
   color: rgba(226, 204, 255, 0.88);
 }
 
+.statusPillError {
+  background: rgba(255, 108, 120, 0.12);
+  border-color: rgba(255, 132, 148, 0.32);
+  color: rgba(255, 210, 215, 0.9);
+}
+
 .callout {
   display: flex;
   gap: 0.75rem;
@@ -101,6 +107,86 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.85rem;
+}
+
+.runnerSummary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 1rem;
+  background: rgba(12, 18, 36, 0.75);
+  border: 1px solid rgba(106, 122, 255, 0.18);
+}
+
+.runnerSummaryLabel {
+  display: block;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(214, 224, 255, 0.6);
+}
+
+.runnerSummaryValue {
+  font-size: 0.85rem;
+  color: rgba(245, 248, 255, 0.94);
+  word-break: break-all;
+}
+
+.runnerActions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.runnerQueue {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+
+.runnerQueueHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.runnerQueueList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.runnerQueueItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.85rem;
+  background: rgba(12, 18, 36, 0.7);
+  border: 1px solid rgba(106, 122, 255, 0.16);
+}
+
+.runnerQueueId {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgba(224, 234, 255, 0.92);
+}
+
+.runnerQueueMeta {
+  display: block;
+  font-size: 0.65rem;
+  color: rgba(214, 224, 255, 0.6);
+}
+
+.runnerQueueStatus {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .policyHighlights {

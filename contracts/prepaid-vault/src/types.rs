@@ -80,6 +80,59 @@ pub struct RunSettlement {
 
 #[derive(Clone)]
 #[contracttype]
+pub struct RunnerGrant {
+    pub runner: Address,
+    pub agent_id: u32,
+    pub issued_at: u64,
+    pub expires_at: Option<u64>,
+}
+
+#[derive(Clone)]
+#[contracttype]
+pub struct RunnerGrantLog {
+    pub user: Address,
+    pub runner: Address,
+    pub agent_id: u32,
+    pub issued_at: u64,
+    pub expires_at: Option<u64>,
+}
+
+#[derive(Clone)]
+#[contracttype]
+pub struct RunnerRevokeLog {
+    pub user: Address,
+    pub runner: Address,
+    pub agent_id: u32,
+    pub revoked_at: u64,
+}
+
+#[derive(Clone)]
+#[contracttype]
+pub struct RunOpenedLog {
+    pub run_id: u64,
+    pub user: Address,
+    pub opened_by: Address,
+    pub agent_id: u32,
+    pub rate_version: u32,
+    pub max_charge: i128,
+    pub budgets: UsageBreakdown,
+    pub opened_at: u64,
+}
+
+#[derive(Clone)]
+#[contracttype]
+pub struct RunFinalizedLog {
+    pub run_id: u64,
+    pub runner: Address,
+    pub actual_charge: i128,
+    pub refund: i128,
+    pub usage: UsageBreakdown,
+    pub output_hash: BytesN<32>,
+    pub finalized_at: u64,
+}
+
+#[derive(Clone)]
+#[contracttype]
 pub enum RunLifecycle {
     Open,
     Finalized(RunSettlement),
@@ -122,4 +175,6 @@ pub enum VaultError {
     UsageExceedsBudget = 13,
     InvalidRateVersion = 14,
     UnauthorizedRunner = 15,
+    RunnerGrantExists = 16,
+    RunnerGrantNotFound = 17,
 }
