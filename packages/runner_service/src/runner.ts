@@ -425,12 +425,13 @@ export class RunnerService {
       signTransaction: async (
         xdr: string,
         opts?: { networkPassphrase?: string },
-      ): Promise<string> => {
+      ): Promise<{ signedTxXdr: string }> => {
         const passphrase = opts?.networkPassphrase ?? networkPassphrase;
         const transaction = TransactionBuilder.fromXDR(xdr, passphrase);
         transaction.sign(this.keypair);
         envelopeHash = transaction.hash().toString("hex");
-        return transaction.toEnvelope().toXDR("base64");
+        const signedTxXdr = transaction.toEnvelope().toXDR("base64");
+        return { signedTxXdr };
       },
     });
     return envelopeHash;
