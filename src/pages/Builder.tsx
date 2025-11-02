@@ -2083,12 +2083,12 @@ Provide an actionable financial summary that references concrete balances, recen
           );
           const totalCharge = Math.max(0, PLATFORM_FEE + usageCharge);
           if (totalCharge > 0) {
-            const deduction = deductFromSmartWallet(totalCharge, {
+            const deduction = await deductFromSmartWallet(totalCharge, {
               label: activeWorkflow?.label ?? "Workflow run",
               runType: label,
               usage: usageTotals,
             });
-            if (deduction.applied > 0) {
+            if (deduction.ok && deduction.applied > 0) {
               const actionLabel = label === "run" ? "Run" : "Preview";
               const baseMessage = `${actionLabel} charged ${formatCurrency(deduction.applied)} (includes ${formatCurrency(PLATFORM_FEE)} platform fee).`;
               const balanceMessage = deduction.insufficient
@@ -2100,7 +2100,8 @@ Provide an actionable financial summary that references concrete balances, recen
               );
             } else if (!deduction.ok) {
               addNotification(
-                "Unable to charge smart wallet for this run.",
+                deduction.error ??
+                  "Unable to charge smart wallet for this run.",
                 "error",
               );
             }

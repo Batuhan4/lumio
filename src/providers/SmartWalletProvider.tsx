@@ -15,10 +15,30 @@ import {
 } from "../types/smartWallet";
 import { type AgentUsage, metersInDisplayOrder } from "../util/pricing";
 import { useVaultBalance } from "../hooks/useVaultBalance";
+import { useWallet } from "../hooks/useWallet";
+import { AMOUNT_SCALE } from "../util/amount";
+import { createPrepaidVaultClient } from "../contracts/prepaid_vault";
+import { createAgentRegistryClient } from "../contracts/agent_registry";
+import { networkPassphrase as defaultNetworkPassphrase } from "../contracts/util";
 
 const STORAGE_KEY = "smartWallet";
 const MAX_TRANSACTIONS = 50;
 const PRECISION_FACTOR = 1_000_000;
+const DEFAULT_AGENT_ID = 1;
+
+type ContractUsageBreakdown = {
+  llm_in: bigint;
+  llm_out: bigint;
+  http_calls: bigint;
+  runtime_ms: bigint;
+};
+
+const ZERO_USAGE: ContractUsageBreakdown = {
+  llm_in: 0n,
+  llm_out: 0n,
+  http_calls: 0n,
+  runtime_ms: 0n,
+};
 
 const roundCurrency = (value: number) =>
   Math.round(Number(value || 0) * PRECISION_FACTOR) / PRECISION_FACTOR;
@@ -27,6 +47,85 @@ const clampCurrency = (value: number) => Math.max(0, roundCurrency(value));
 
 const safeNumber = (value: unknown): number =>
   typeof value === "number" && Number.isFinite(value) ? value : 0;
+
+const decimalToContractUnits = (value: number): bigint => {
+  if (!Number.isFinite(value) || value <= 0) {
+    return 0n;
+  }
+  const normalized = value < 0 ? 0 : value;
+  const [wholePart, fractionalRaw = ""] = normalized.toFixed(7).split(".");
+  const whole = BigInt(wholePart) * AMOUNT_SCALE;
+  const fractional = BigInt(fractionalRaw.padEnd(7, "0").slice(0, 7));
+  return whole + fractional;
+};
+
+const contractUnitsToDecimal = (value: bigint): number => {
+  return Number(value) / Number(AMOUNT_SCALE);
+};
+
+const divideCeil = (numerator: bigint, denominator: bigint): bigint => {
+  if (denominator <= 0n) {
+    throw new Error("Cannot divide by zero or negative value.");
+  }
+  if (numerator <= 0n) {
+    return 0n;
+  }
+  const quotient = numerator / denominator;
+  return numerator % denominator === 0n ? quotient : quotient + 1n;
+};
+
+const USAGE_METERS = ["llm_in", "llm_out", "http_calls", "runtime_ms"] as const;
+
+const toPositiveInteger = (value: number | undefined): bigint => {
+  if (!Number.isFinite(value) || value === undefined) {
+    return 0n;
+  }
+  if (value <= 0) {
+    return 0n;
+  }
+  return BigInt(Math.round(value));
+};
+
+const agentUsageToContract = (usage?: AgentUsage): ContractUsageBreakdown => {
+  if (!usage) {
+    return { ...ZERO_USAGE };
+  }
+  return {
+    llm_in: toPositiveInteger(usage.llmInTokens),
+    llm_out: toPositiveInteger(usage.llmOutTokens),
+    http_calls: toPositiveInteger(usage.httpCalls),
+    runtime_ms: toPositiveInteger(usage.runtimeMs),
+  };
+};
+
+const computeUsageChargeUnits = (
+  rates: ContractUsageBreakdown,
+  usage: ContractUsageBreakdown,
+): bigint => {
+  return (
+    rates.llm_in * usage.llm_in +
+    rates.llm_out * usage.llm_out +
+    rates.http_calls * usage.http_calls +
+    rates.runtime_ms * usage.runtime_ms
+  );
+};
+
+const cloneUsage = (usage: ContractUsageBreakdown): ContractUsageBreakdown => ({
+  llm_in: usage.llm_in,
+  llm_out: usage.llm_out,
+  http_calls: usage.http_calls,
+  runtime_ms: usage.runtime_ms,
+});
+
+const selectSupplementMeter = (rates: ContractUsageBreakdown) => {
+  for (const key of USAGE_METERS) {
+    const rate = rates[key];
+    if (rate > 0n) {
+      return { key, rate };
+    }
+  }
+  return { key: "runtime_ms" as const, rate: 0n };
+};
 
 const generateId = (prefix: string) =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -157,129 +256,19 @@ type SmartWalletDeductionOptions = {
 
 export type SmartWalletMutationResult = {
   ok: boolean;
-  direction: "debit" | "credit";
+  direction: "debit";
   applied: number;
   balance: number;
   requested: number;
   insufficient: boolean;
+  runId?: number;
+  error?: string;
 };
 
-const applyDebit = (
-  prev: SmartWalletPersistence,
-  amount: number,
-  options?: SmartWalletDeductionOptions,
-) => {
-  const requested = clampCurrency(amount);
-  if (requested <= 0) {
-    return {
-      next: prev,
-      result: {
-        ok: false,
-        direction: "debit" as const,
-        applied: 0,
-        balance: prev.balance,
-        requested,
-        insufficient: false,
-      },
-    };
-  }
-
-  const previousBalance = clampCurrency(prev.balance);
-  const insufficient = requested > previousBalance;
-  const applied = insufficient ? previousBalance : requested;
-  const nextBalance = clampCurrency(previousBalance - applied);
-  const nextLifetime = clampCurrency(prev.lifetimeSpend + applied);
-
-  const transaction: SmartWalletTransaction | null =
-    applied > 0
-      ? {
-          id: generateId("txn"),
-          direction: "debit",
-          amount: applied,
-          timestamp: new Date().toISOString(),
-          reason: options?.label,
-          runType: options?.runType,
-          usage: toUsageSnapshot(options?.usage),
-          balanceAfter: nextBalance,
-          requested,
-          insufficient,
-        }
-      : null;
-
-  const transactions =
-    transaction !== null
-      ? [transaction, ...prev.transactions].slice(0, MAX_TRANSACTIONS)
-      : prev.transactions;
-
-  return {
-    next: {
-      balance: nextBalance,
-      syncedBalance: prev.syncedBalance,
-      lifetimeSpend: nextLifetime,
-      transactions,
-    },
-    result: {
-      ok: applied > 0,
-      direction: "debit" as const,
-      applied,
-      balance: nextBalance,
-      requested,
-      insufficient,
-    },
-  };
-};
-
-const applyCredit = (
-  prev: SmartWalletPersistence,
-  amount: number,
-  reason?: string,
-) => {
-  const requested = clampCurrency(amount);
-  if (requested <= 0) {
-    return {
-      next: prev,
-      result: {
-        ok: false,
-        direction: "credit" as const,
-        applied: 0,
-        balance: prev.balance,
-        requested,
-        insufficient: false,
-      },
-    };
-  }
-
-  const nextBalance = clampCurrency(prev.balance + requested);
-  const transaction: SmartWalletTransaction = {
-    id: generateId("txn"),
-    direction: "credit",
-    amount: requested,
-    timestamp: new Date().toISOString(),
-    reason,
-    balanceAfter: nextBalance,
-  };
-
-  const transactions = [transaction, ...prev.transactions].slice(
-    0,
-    MAX_TRANSACTIONS,
-  );
-
-  return {
-    next: {
-      balance: nextBalance,
-      syncedBalance: prev.syncedBalance,
-      lifetimeSpend: prev.lifetimeSpend,
-      transactions,
-    },
-    result: {
-      ok: true,
-      direction: "credit" as const,
-      applied: requested,
-      balance: nextBalance,
-      requested,
-      insufficient: false,
-    },
-  };
+type AgentConfig = {
+  agentId: number;
+  rateVersion: number;
+  rates: ContractUsageBreakdown;
 };
 
 export type SmartWalletContextValue = {
@@ -289,8 +278,7 @@ export type SmartWalletContextValue = {
   deduct: (
     amount: number,
     options?: SmartWalletDeductionOptions,
-  ) => SmartWalletMutationResult;
-  credit: (amount: number, reason?: string) => SmartWalletMutationResult;
+  ) => Promise<SmartWalletMutationResult>;
   reset: () => void;
   refresh: () => Promise<void>;
 };
@@ -300,6 +288,13 @@ export const SmartWalletContext = // eslint-disable-line react-refresh/only-expo
 
 export const SmartWalletProvider = ({ children }: PropsWithChildren) => {
   const [state, setState] = useState<SmartWalletPersistence>(loadState);
+  const [agentConfig, setAgentConfig] = useState<AgentConfig | null>(null);
+  const {
+    address,
+    signTransaction,
+    signAuthEntry,
+    networkPassphrase: walletNetworkPassphrase,
+  } = useWallet();
   const {
     balance: vaultBalance,
     rawBalance,
@@ -310,6 +305,62 @@ export const SmartWalletProvider = ({ children }: PropsWithChildren) => {
   const persist = useCallback((next: SmartWalletPersistence) => {
     storage.setItem(STORAGE_KEY, next);
   }, []);
+
+  const ensureAgentConfig = useCallback(async (): Promise<AgentConfig> => {
+    if (agentConfig) {
+      return agentConfig;
+    }
+
+    const registryClient = createAgentRegistryClient();
+    const agentId = DEFAULT_AGENT_ID;
+
+    try {
+      const latestVersionTx = await registryClient.latest_rate_version({
+        agent_id: agentId,
+      });
+      const rawVersion = latestVersionTx.result;
+      const rateVersion =
+        typeof rawVersion === "bigint"
+          ? Number(rawVersion)
+          : typeof rawVersion === "number"
+            ? rawVersion
+            : 1;
+
+      const rateCardTx = await registryClient.get_rate_card({
+        agent_id: agentId,
+        version: rateVersion,
+      });
+      const rateCard = rateCardTx.result;
+      if (!rateCard) {
+        throw new Error("Rate card unavailable.");
+      }
+      const normalizedRates: ContractUsageBreakdown = {
+        llm_in: BigInt((rateCard.rates as ContractUsageBreakdown).llm_in ?? 0n),
+        llm_out: BigInt(
+          (rateCard.rates as ContractUsageBreakdown).llm_out ?? 0n,
+        ),
+        http_calls: BigInt(
+          (rateCard.rates as ContractUsageBreakdown).http_calls ?? 0n,
+        ),
+        runtime_ms: BigInt(
+          (rateCard.rates as ContractUsageBreakdown).runtime_ms ?? 0n,
+        ),
+      };
+
+      const config: AgentConfig = {
+        agentId,
+        rateVersion,
+        rates: normalizedRates,
+      };
+      setAgentConfig(config);
+      return config;
+    } catch (error) {
+      console.error("Failed to load agent registry config", error);
+      throw error instanceof Error
+        ? error
+        : new Error("Failed to load agent registry config.");
+    }
+  }, [agentConfig]);
 
   useEffect(() => {
     if (!hasAddress) {
@@ -361,19 +412,9 @@ export const SmartWalletProvider = ({ children }: PropsWithChildren) => {
   }, [refreshVaultBalance]);
 
   const deduct = useCallback<SmartWalletContextValue["deduct"]>(
-    (amount, options) => {
-      let outcome: SmartWalletMutationResult | null = null;
-      setState((previous) => {
-        const sanitizedPrev = sanitizeState(previous);
-        const { next, result } = applyDebit(sanitizedPrev, amount, options);
-        outcome = result;
-        persist(next);
-        return next;
-      });
-      void refresh();
-
-      if (!outcome) {
-        const requested = clampCurrency(amount);
+    async (amount, options) => {
+      const requested = clampCurrency(amount);
+      if (requested <= 0) {
         return {
           ok: false,
           direction: "debit",
@@ -381,41 +422,205 @@ export const SmartWalletProvider = ({ children }: PropsWithChildren) => {
           balance: clampCurrency(state.balance),
           requested,
           insufficient: false,
+          error: "Charge amount must be greater than zero.",
         };
       }
 
-      return outcome;
-    },
-    [persist, refresh, state.balance],
-  );
-
-  const credit = useCallback<SmartWalletContextValue["credit"]>(
-    (amount, reason) => {
-      let outcome: SmartWalletMutationResult | null = null;
-      setState((previous) => {
-        const sanitizedPrev = sanitizeState(previous);
-        const { next, result } = applyCredit(sanitizedPrev, amount, reason);
-        outcome = result;
-        persist(next);
-        return next;
-      });
-      void refresh();
-
-      if (!outcome) {
-        const requested = clampCurrency(amount);
+      if (!address || !signTransaction) {
         return {
           ok: false,
-          direction: "credit",
+          direction: "debit",
           applied: 0,
           balance: clampCurrency(state.balance),
           requested,
           insufficient: false,
+          error: "Connect a wallet that supports transaction signing.",
         };
       }
 
-      return outcome;
+      try {
+        const config = await ensureAgentConfig();
+        const requestedUnits = decimalToContractUnits(requested);
+        const usageBreakdown = agentUsageToContract(options?.usage);
+        const budgets = cloneUsage(usageBreakdown);
+
+        const usageChargeUnits = computeUsageChargeUnits(
+          config.rates,
+          usageBreakdown,
+        );
+        const supplementalUnits =
+          requestedUnits > usageChargeUnits
+            ? requestedUnits - usageChargeUnits
+            : 0n;
+
+        if (supplementalUnits > 0n) {
+          const { key, rate } = selectSupplementMeter(config.rates);
+          if (rate <= 0n) {
+            throw new Error(
+              "Agent rate card is missing a positive rate to allocate budgets.",
+            );
+          }
+          const extraUnits = divideCeil(supplementalUnits, rate);
+          budgets[key] = budgets[key] + extraUnits;
+        }
+
+        const chargedUnits = computeUsageChargeUnits(config.rates, budgets);
+        const appliedAmount = clampCurrency(
+          contractUnitsToDecimal(chargedUnits),
+        );
+
+        if (chargedUnits <= 0n || appliedAmount <= 0) {
+          return {
+            ok: false,
+            direction: "debit",
+            applied: 0,
+            balance: clampCurrency(state.balance),
+            requested,
+            insufficient: false,
+            error: "Unable to compute a positive charge for this run.",
+          };
+        }
+
+        const vaultClient = createPrepaidVaultClient({
+          publicKey: address,
+        });
+
+        const tx = await vaultClient.open_run({
+          user: address,
+          agent_id: config.agentId,
+          rate_version: config.rateVersion,
+          budgets,
+        });
+
+        const needsAdditionalSignatures = (() => {
+          try {
+            return tx.needsNonInvokerSigningBy().length > 0;
+          } catch {
+            return false;
+          }
+        })();
+
+        if (needsAdditionalSignatures) {
+          if (!signAuthEntry) {
+            throw new Error(
+              "Wallet cannot sign authorization entries required for this charge.",
+            );
+          }
+          const passphrase =
+            walletNetworkPassphrase ?? defaultNetworkPassphrase ?? "";
+          await tx.signAuthEntries({
+            address,
+            signAuthEntry: (authEntry, opts) =>
+              signAuthEntry(authEntry, {
+                ...opts,
+                address,
+                networkPassphrase: passphrase,
+              }),
+          });
+        }
+
+        await tx.signAndSend({
+          signTransaction: (xdr, opts) =>
+            signTransaction(xdr, {
+              ...opts,
+              address,
+            }),
+        });
+
+        const runIdRaw = tx.result;
+        const runId =
+          typeof runIdRaw === "bigint"
+            ? Number(runIdRaw)
+            : typeof runIdRaw === "number"
+              ? runIdRaw
+              : undefined;
+
+        const transactionTimestamp = new Date().toISOString();
+        const usageSnapshot = sanitizeUsage(toUsageSnapshot(options?.usage));
+        let resultingBalance = clampCurrency(state.balance);
+
+        setState((previous) => {
+          const sanitizedPrev = sanitizeState(previous);
+          const nextBalance = clampCurrency(
+            sanitizedPrev.balance - appliedAmount,
+          );
+          const nextLifetime = clampCurrency(
+            sanitizedPrev.lifetimeSpend + appliedAmount,
+          );
+          resultingBalance = nextBalance;
+          const transaction: SmartWalletTransaction = {
+            id: generateId("txn"),
+            direction: "debit",
+            amount: appliedAmount,
+            timestamp: transactionTimestamp,
+            reason: options?.label,
+            runType: options?.runType,
+            usage: usageSnapshot,
+            balanceAfter: nextBalance,
+            requested,
+            insufficient: false,
+          };
+
+          const transactions = [
+            transaction,
+            ...sanitizedPrev.transactions,
+          ].slice(0, MAX_TRANSACTIONS);
+
+          const nextState: SmartWalletPersistence = {
+            ...sanitizedPrev,
+            balance: nextBalance,
+            lifetimeSpend: nextLifetime,
+            transactions,
+          };
+          persist(nextState);
+          return nextState;
+        });
+
+        void refresh();
+
+        return {
+          ok: true,
+          direction: "debit",
+          applied: appliedAmount,
+          balance: resultingBalance,
+          requested,
+          insufficient: false,
+          runId,
+        };
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Failed to charge smart wallet.";
+        const insufficient =
+          /#5\b|InsufficientBalance/i.test(message) ||
+          /insufficient balance/i.test(message);
+
+        if (!insufficient) {
+          console.error("Smart wallet charge failed", error);
+        }
+
+        return {
+          ok: false,
+          direction: "debit",
+          applied: 0,
+          balance: clampCurrency(state.balance),
+          requested,
+          insufficient,
+          error: message,
+        };
+      }
     },
-    [persist, refresh, state.balance],
+    [
+      address,
+      ensureAgentConfig,
+      persist,
+      refresh,
+      signAuthEntry,
+      signTransaction,
+      state.balance,
+      walletNetworkPassphrase,
+    ],
   );
 
   const reset = useCallback(() => {
@@ -433,11 +638,10 @@ export const SmartWalletProvider = ({ children }: PropsWithChildren) => {
       lifetimeSpend,
       transactions,
       deduct,
-      credit,
       reset,
       refresh,
     }),
-    [balance, lifetimeSpend, transactions, deduct, credit, reset, refresh],
+    [balance, lifetimeSpend, transactions, deduct, reset, refresh],
   );
 
   return (
